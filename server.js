@@ -18,7 +18,7 @@ const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
 const PORT = process.env.PORT || 3000;
 const SESSION_HOURS = 8;
-const CUSTOMER_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes inactivity timeout for customer accounts
+const CUSTOMER_IDLE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes inactivity timeout for customer accounts
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '100kb' }));

@@ -125,6 +125,7 @@
       modal({
         title: 'Notifications & Alerts',
         submitText: 'Close',
+        cancelText: false,
         body: `
           <div style="max-height:460px;overflow-y:auto;padding:4px 0">
             ${notifications.length ? notifications.map((n) => `
@@ -798,8 +799,8 @@
     await refreshNotifications().catch(() => {});
     setInterval(() => refreshNotifications().catch(() => {}), 30000);
 
-    // 5-minute inactivity auto-logout system
-    const IDLE_LIMIT_MS = 5 * 60 * 1000;
+    // 3-minute inactivity auto-logout system
+    const IDLE_LIMIT_MS = 3 * 60 * 1000;
     const WARN_BEFORE_MS = 30 * 1000; // 30-second warning modal
     let lastActive = Date.now();
     let idleCheckTimer = null;
@@ -821,7 +822,7 @@
       const elapsed = Date.now() - lastActive;
       if (elapsed >= IDLE_LIMIT_MS) {
         clearInterval(idleCheckTimer);
-        toast('Signed out due to 5 minutes of inactivity', 'warn');
+        toast('Signed out due to 3 minutes of inactivity', 'warn');
         setTimeout(() => { CB.logout(); }, 500);
         return;
       }
@@ -830,6 +831,7 @@
         warnedModal = modal({
           title: 'Session Inactivity Warning',
           submitText: 'Continue banking session',
+          cancelText: false,
           body: `
             <div style="padding:10px 0;text-align:center">
               <div style="font-size:32px;margin-bottom:8px">⏱️</div>

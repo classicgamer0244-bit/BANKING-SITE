@@ -91,7 +91,7 @@ const CB = (() => {
     wrap.innerHTML = `<form class="modal ${wide ? 'wide' : ''}" novalidate>
       <div class="modal-head"><h3>${esc(title)}</h3><button type="button" class="x-btn" aria-label="Close">&times;</button></div>
       <div class="modal-body"><div class="form-error"></div>${body}</div>
-      ${onSubmit ? `<div class="modal-foot"><button type="button" class="btn btn-ghost" data-cancel>${esc(cancelText)}</button>
+      ${onSubmit ? `<div class="modal-foot">${cancelText ? `<button type="button" class="btn btn-ghost" data-cancel>${esc(cancelText)}</button>` : ''}
         <button class="btn ${danger ? 'btn-danger' : ''}" type="submit">${esc(submitText)}</button></div>` : ''}
     </form>`;
     const form = wrap.querySelector('form');
