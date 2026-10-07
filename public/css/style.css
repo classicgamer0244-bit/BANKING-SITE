@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --navy-900: #061a33;
   --navy-800: #0a2647;
   --navy-700: #0f3561;
@@ -311,7 +311,11 @@ input[type=range] { padding: 0; border: 0; accent-color: var(--navy-700); }
 .main { min-width: 0; }
 .app-top { background: #fff; border-bottom: 1px solid var(--line); height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; position: sticky; top: 0; z-index: 40; gap: 12px; }
 .app-top h1 { font-size: 19px; margin: 0; }
-.app-top .right { display: flex; align-items: center; gap: 10px; }
+.app-top .right { display: flex; align-items: center; gap: 14px; }
+.notif-btn { background: none; border: 1px solid var(--line); border-radius: 50%; width: 38px; height: 38px; display: grid; place-items: center; cursor: pointer; color: var(--navy-800); position: relative; transition: .15s; }
+.notif-btn:hover { background: var(--bg); border-color: var(--blue-400); color: var(--blue-600); }
+.notif-badge { position: absolute; top: -3px; right: -3px; background: var(--down); color: #fff; font-size: 10.5px; font-weight: 700; border-radius: 999px; min-width: 17px; height: 17px; display: grid; place-items: center; padding: 0 4px; box-shadow: 0 0 0 2px #fff; }
+.notif-badge[hidden] { display: none; }
 .avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--navy-700); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 13px; }
 .page { padding: 26px 28px 60px; max-width: 1280px; }
 .mini-ticker { display: flex; gap: 18px; font-size: 12.5px; overflow: hidden; white-space: nowrap; color: var(--ink-2); }

@@ -53,6 +53,7 @@ const CB = (() => {
     grad: '<path d="M2 9l10-5 10 5-10 5zM6 11v5c3 2 9 2 12 0v-5"/>',
     lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
+    bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
     check: '<path d="M5 12l5 5L20 7"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     download: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',

@@ -7,6 +7,7 @@ const {
   postTransaction, audit, ensureAdmin, isCredit, ACCOUNT_TYPES,
   getTransferSettings, setTransferSettings,
   getUserTransferSettings, setUserTransferSettings, clearUserTransferSettings, getAllCustomTransferControls,
+  addNotification, getUserNotifications, markNotificationsRead,
 } = require('./db');
 const { getMarket, getNews } = require('./market');
 const chatbot = require('./chatbot');
@@ -17,6 +18,7 @@ const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
 const PORT = process.env.PORT || 3000;
 const SESSION_HOURS = 8;
+const CUSTOMER_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes inactivity timeout for customer accounts
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '100kb' }));
@@ -82,9 +84,18 @@ function parseCookies(req) {
 app.use((req, res, next) => {
   const token = parseCookies(req).cb_session;
   if (token) {
-    const row = db.prepare(`SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
-                            WHERE s.token = ? AND s.expires_at > ?`).get(token, Date.now());
-    if (row && row.status === 'active') { req.user = row; req.sessionToken = token; }
+    const now = Date.now();
+    const row = db.prepare(`SELECT u.*, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id
+                            WHERE s.token = ? AND s.expires_at > ?`).get(token, now);
+    if (row && row.status === 'active') {
+      req.user = row;
+      req.sessionToken = token;
+      // For customer accounts, extend session by 5 minutes of active usage
+      if (row.role === 'customer') {
+        const newExpires = now + CUSTOMER_IDLE_TIMEOUT_MS;
+        db.prepare('UPDATE sessions SET expires_at = ? WHERE token = ?').run(newExpires, token);
+      }
+    }
   }
   next();
 });
@@ -121,7 +132,8 @@ app.post('/api/auth/login', wrap((req, res) => {
   attempts.delete(key);
   const token = crypto.randomBytes(32).toString('hex');
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
-  db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, user.id, Date.now() + SESSION_HOURS * 3600_000);
+  const initialDuration = user.role === 'customer' ? CUSTOMER_IDLE_TIMEOUT_MS : SESSION_HOURS * 3600_000;
+  db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, user.id, Date.now() + initialDuration);
   db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(user.id);
   audit(user.id, 'login', user.username);
   res.setHeader('Set-Cookie', `cb_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_HOURS * 3600}`);
@@ -483,6 +495,17 @@ app.post('/api/messages', requireAuth, requireCustomer, wrap((req, res) => {
   db.prepare('INSERT INTO messages (user_id, from_admin, subject, body, is_read) VALUES (?, 0, ?, ?, 0)').run(req.user.id, subject, body);
   res.json({ ok: true });
 }));
+
+app.get('/api/notifications', requireAuth, requireCustomer, (req, res) => {
+  const notifications = getUserNotifications(req.user.id, 50);
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  res.json({ notifications, unread: unreadCount });
+});
+
+app.post('/api/notifications/read', requireAuth, requireCustomer, (req, res) => {
+  markNotificationsRead(req.user.id);
+  res.json({ ok: true });
+});
 
 // ---------------- admin ----------------
 const admin = express.Router();

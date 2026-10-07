@@ -168,6 +168,18 @@ CREATE TABLE IF NOT EXISTS user_transfer_controls (
   notice_type      TEXT NOT NULL DEFAULT 'info',
   updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  message    TEXT NOT NULL,
+  type       TEXT NOT NULL DEFAULT 'transaction', -- transaction | security | transfer | system
+  reference  TEXT NOT NULL DEFAULT '',
+  is_read    INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, id);
 `);
 
 function getTransferSettings() {
@@ -331,7 +343,33 @@ function postTransaction({ accountId, direction, amountCents, category, descript
   const r = db.prepare(`INSERT INTO transactions (account_id, direction, amount_cents, balance_after, category, description, reference, created_by)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(accountId, direction, amountCents, newBal, category || 'other', description || '', ref, createdBy ?? null);
+
+  // Generate real-time notification for the customer
+  try {
+    const formattedAmt = (amountCents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+    const isCreditDir = direction === 'in';
+    const notifTitle = isCreditDir ? `Deposit Received: ${formattedAmt}` : `Transaction: ${formattedAmt}`;
+    const notifMsg = `${description || (isCreditDir ? 'Deposit' : 'Withdrawal')} on ••${acct.number.slice(-4)}. New balance: ${(newBal / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}.`;
+    db.prepare('INSERT INTO notifications (user_id, title, message, type, reference) VALUES (?, ?, ?, ?, ?)')
+      .run(acct.user_id, notifTitle, notifMsg, 'transaction', ref);
+  } catch (err) {
+    /* ignore notification logging failure */
+  }
+
   return { id: Number(r.lastInsertRowid), reference: ref, balance: newBal };
+}
+
+function addNotification(userId, title, message, type = 'system', reference = '') {
+  return db.prepare('INSERT INTO notifications (user_id, title, message, type, reference) VALUES (?, ?, ?, ?, ?)')
+    .run(userId, title, message, type, reference);
+}
+
+function getUserNotifications(userId, limit = 50) {
+  return db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(userId, limit);
+}
+
+function markNotificationsRead(userId) {
+  return db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(userId);
 }
 
 function audit(actorId, action, details) {
@@ -362,4 +400,5 @@ module.exports = {
   postTransaction, audit, ensureAdmin, isCredit, ACCOUNT_TYPES,
   getTransferSettings, setTransferSettings,
   getUserTransferSettings, setUserTransferSettings, clearUserTransferSettings, getAllCustomTransferControls,
+  addNotification, getUserNotifications, markNotificationsRead,
 };

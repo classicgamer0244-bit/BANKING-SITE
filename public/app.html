@@ -27,7 +27,13 @@
         <h1 id="pageTitle">Overview</h1>
       </div>
       <div class="mini-ticker" id="miniTicker"></div>
-      <div class="right"><div class="avatar" id="avatar"></div></div>
+      <div class="right">
+        <button type="button" class="notif-btn" id="notifBtn" aria-label="Notifications" title="Notifications">
+          <span class="notif-icon-wrap" id="notifIconWrap"></span>
+          <span class="notif-badge" id="notifBadge" hidden>0</span>
+        </button>
+        <div class="avatar" id="avatar"></div>
+      </div>
     </header>
     <main class="page" id="page"></main>
     <button type="button" class="to-top" id="toTop" aria-label="Back to top" hidden>↑ Back to top</button>

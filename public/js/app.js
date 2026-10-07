@@ -88,11 +88,59 @@
     }
   }
 
+  let unreadNotifs = 0;
   async function refreshAccounts() { accounts = (await api('/api/accounts')).accounts; }
   async function refreshUnread() {
     const { messages } = await api('/api/messages');
     unread = messages.filter((m) => m.from_admin && !m.is_read).length;
     return messages;
+  }
+
+  async function refreshNotifications() {
+    try {
+      const { notifications, unread: uCount } = await api('/api/notifications');
+      unreadNotifs = uCount;
+      const badge = $('#notifBadge');
+      if (badge) {
+        badge.textContent = unreadNotifs;
+        badge.hidden = unreadNotifs <= 0;
+      }
+      return notifications;
+    } catch {
+      return [];
+    }
+  }
+
+  async function openNotificationsModal() {
+    try {
+      const { notifications } = await api('/api/notifications');
+      await api('/api/notifications/read', { method: 'POST' }).catch(() => {});
+      const badge = $('#notifBadge');
+      if (badge) { badge.hidden = true; badge.textContent = '0'; }
+      unreadNotifs = 0;
+
+      modal({
+        title: 'Notifications & Alerts',
+        submitText: 'Close',
+        body: `
+          <div style="max-height:460px;overflow-y:auto;padding:4px 0">
+            ${notifications.length ? notifications.map((n) => `
+              <div style="padding:12px 14px;border-bottom:1px solid var(--line-2);border-radius:8px;margin-bottom:6px;background:${n.is_read ? 'transparent' : 'rgba(224, 168, 62, .06)'}">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+                  <b style="font-size:14.5px;color:var(--navy-900)">${esc(n.title)}</b>
+                  <span class="small muted" style="white-space:nowrap">${dateTime(n.created_at)}</span>
+                </div>
+                <div style="font-size:13.5px;color:var(--ink-2);margin-top:4px;line-height:1.45">${esc(n.message)}</div>
+                ${n.reference ? `<div class="small muted" style="margin-top:4px;font-family:monospace">Ref: ${esc(n.reference)}</div>` : ''}
+              </div>
+            `).join('') : '<div class="empty">No notifications yet.</div>'}
+          </div>
+        `,
+        onSubmit: () => {},
+      });
+    } catch (e) {
+      toast(e.message, 'error');
+    }
   }
 
   // ---------- views ----------
@@ -479,6 +527,7 @@
             </div>`,
             onSubmit: async () => {
               const r = await api('/api/transfers', { body });
+              refreshNotifications().catch(() => {});
               modal({
                 title: 'Transfer dispatched successfully',
                 submitText: 'Done',
@@ -735,6 +784,64 @@
         if (cur >= start && cur > 0) window.scrollTo(0, 0);
       }, 250);
     };
+    // Wire Notifications Bell
+    const notifWrap = $('#notifIconWrap');
+    if (notifWrap) notifWrap.innerHTML = icon('bell', 20);
+    const notifBtn = $('#notifBtn');
+    if (notifBtn) notifBtn.onclick = () => openNotificationsModal();
+    await refreshNotifications().catch(() => {});
+    setInterval(() => refreshNotifications().catch(() => {}), 30000);
+
+    // 5-minute inactivity auto-logout system
+    const IDLE_LIMIT_MS = 5 * 60 * 1000;
+    const WARN_BEFORE_MS = 30 * 1000; // 30-second warning modal
+    let lastActive = Date.now();
+    let idleCheckTimer = null;
+    let warnedModal = null;
+
+    const recordActivity = () => {
+      lastActive = Date.now();
+      if (warnedModal) {
+        warnedModal.close();
+        warnedModal = null;
+      }
+    };
+
+    ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach((evt) => {
+      window.addEventListener(evt, recordActivity, { passive: true });
+    });
+
+    const checkIdle = () => {
+      const elapsed = Date.now() - lastActive;
+      if (elapsed >= IDLE_LIMIT_MS) {
+        clearInterval(idleCheckTimer);
+        toast('Signed out due to 5 minutes of inactivity', 'warn');
+        setTimeout(() => { CB.logout(); }, 500);
+        return;
+      }
+      if (elapsed >= IDLE_LIMIT_MS - WARN_BEFORE_MS && !warnedModal) {
+        const remainingSec = Math.max(1, Math.round((IDLE_LIMIT_MS - elapsed) / 1000));
+        warnedModal = modal({
+          title: 'Session Inactivity Warning',
+          submitText: 'Continue banking session',
+          body: `
+            <div style="padding:10px 0;text-align:center">
+              <div style="font-size:32px;margin-bottom:8px">⏱️</div>
+              <h4 style="margin-bottom:6px">Are you still there?</h4>
+              <p style="color:var(--ink-2);font-size:14.5px;line-height:1.5">
+                For your security, your session will automatically end due to inactivity in <b>30 seconds</b>.
+              </p>
+            </div>
+          `,
+          onSubmit: () => {
+            recordActivity();
+          },
+        });
+      }
+    };
+
+    idleCheckTimer = setInterval(checkIdle, 5000);
+
     await refreshUnread().catch(() => {});
     window.addEventListener('hashchange', route);
     route();
