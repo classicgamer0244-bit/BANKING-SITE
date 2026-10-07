@@ -305,16 +305,22 @@ app.get('/api/accounts/:id/transactions', requireAuth, requireCustomer, wrap((re
   const a = myAccount(req, req.params.id);
   const { before, limit } = pageArgs(req.query);
   const q = `%${str(req.query.q, 60)}%`;
-  const rows = db.prepare(`SELECT * FROM transactions WHERE account_id = ? AND (? = 0 OR id < ?)
-                           AND (description LIKE ? OR reference LIKE ? OR category LIKE ?) ORDER BY id DESC LIMIT ?`)
-    .all(a.id, before, before, q, q, q, limit + 1);
+  const rows = db.prepare(`SELECT t.* FROM transactions t WHERE t.account_id = ? AND ${AFTER_CURSOR}
+                           AND (t.description LIKE ? OR t.reference LIKE ? OR t.category LIKE ?) ORDER BY t.created_at DESC, t.id DESC LIMIT ?`)
+    .all(a.id, ...cursorArgs(before), q, q, q, limit + 1);
   res.json({ account: acctView(a), transactions: rows.slice(0, limit).map(txView), more: rows.length > limit });
 }));
 
+// All of a customer's activity across accounts, newest first; pages with ?before=<id>, filters with ?q= and ?account=.
 app.get('/api/activity', requireAuth, requireCustomer, (req, res) => {
+  const { before, limit } = pageArgs(req.query);
+  const q = `%${str(req.query.q, 60)}%`;
+  const account = Number(req.query.account) || 0;
   const rows = db.prepare(`SELECT t.*, a.number, a.type FROM transactions t JOIN accounts a ON a.id = t.account_id
-                           WHERE a.user_id = ? ORDER BY t.id DESC LIMIT ?`).all(req.user.id, Math.min(Number(req.query.limit) || 25, 500));
-  res.json({ transactions: rows.map(txView) });
+      WHERE a.user_id = ? AND ${AFTER_CURSOR} AND (? = 0 OR a.id = ?)
+        AND (t.description LIKE ? OR t.reference LIKE ? OR t.category LIKE ?)
+      ORDER BY t.created_at DESC, t.id DESC LIMIT ?`).all(req.user.id, ...cursorArgs(before), account, account, q, q, q, limit + 1);
+  res.json({ transactions: rows.slice(0, limit).map(txView), more: rows.length > limit });
 });
 
 app.get('/api/accounts/:id/statement.csv', requireAuth, requireCustomer, wrap((req, res) => {
@@ -593,9 +599,16 @@ admin.get('/users/:id', wrap((req, res) => {
 // Transaction lists load a page at a time; "before" is the id of the last row already shown.
 const PAGE_SIZE = 25;
 const pageArgs = (q) => ({ before: Number(q.before) || 0, limit: Math.min(Math.max(Number(q.limit) || PAGE_SIZE, 1), 200) });
+// Lists are newest first by date/time (not insert order, since generated histories are saved one account
+// at a time). The cursor is the last row shown: continue with rows dated earlier, or same time and lower id.
+const AFTER_CURSOR = '(? IS NULL OR t.created_at < ? OR (t.created_at = ? AND t.id < ?))';
+function cursorArgs(before) {
+  const c = before ? db.prepare('SELECT created_at FROM transactions WHERE id = ?').get(before)?.created_at ?? null : null;
+  return [c, c, c, before];
+}
 function customerTxPage(userId, before, limit) {
   const rows = db.prepare(`SELECT t.*, a.number, a.type FROM transactions t JOIN accounts a ON a.id = t.account_id
-                           WHERE a.user_id = ? AND (? = 0 OR t.id < ?) ORDER BY t.id DESC LIMIT ?`).all(userId, before, before, limit + 1);
+                           WHERE a.user_id = ? AND ${AFTER_CURSOR} ORDER BY t.created_at DESC, t.id DESC LIMIT ?`).all(userId, ...cursorArgs(before), limit + 1);
   const total = db.prepare('SELECT COUNT(*) n FROM transactions t JOIN accounts a ON a.id = t.account_id WHERE a.user_id = ?').get(userId).n;
   return { transactions: rows.slice(0, limit).map(txView), more: rows.length > limit, total };
 }
@@ -700,9 +713,9 @@ admin.get('/transactions', (req, res) => {
   const { before, limit } = pageArgs(req.query);
   const rows = db.prepare(`SELECT t.*, a.number, a.type, a.user_id, u.first_name, u.last_name FROM transactions t
       JOIN accounts a ON a.id = t.account_id JOIN users u ON u.id = a.user_id
-      WHERE (? = 0 OR t.id < ?)
+      WHERE ${AFTER_CURSOR}
         AND (t.description LIKE ? OR t.reference LIKE ? OR a.number LIKE ? OR (u.first_name || ' ' || u.last_name) LIKE ?)
-      ORDER BY t.id DESC LIMIT ?`).all(before, before, q, q, q, q, limit + 1);
+      ORDER BY t.created_at DESC, t.id DESC LIMIT ?`).all(...cursorArgs(before), q, q, q, q, limit + 1);
   res.json({ transactions: rows.slice(0, limit).map(txView), more: rows.length > limit });
 });
 

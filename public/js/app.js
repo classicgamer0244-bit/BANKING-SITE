@@ -5,7 +5,7 @@
   let me = null, accounts = [], unread = 0;
 
   const NAV = [
-    ['overview', 'home', 'Overview'], ['accounts', 'accounts', 'Accounts'], ['transfer', 'transfer', 'Transfer & Send'],
+    ['overview', 'home', 'Overview'], ['accounts', 'accounts', 'Accounts'], ['activity', 'list', 'All activity'], ['transfer', 'transfer', 'Transfer & Send'],
     ['billpay', 'bill', 'Bill Pay'], ['cards', 'card', 'Cards'], ['markets', 'chart', 'Markets & News'],
     ['care', 'users', 'Customer care chat'], ['messages', 'mail', 'Secure messages'], ['profile', 'user', 'Profile & Security'],
   ];
@@ -72,7 +72,8 @@
           <div class="stack">
             <div class="card"><div class="card-head"><h2>Your accounts</h2><a href="#/accounts">View all</a></div>
               <div class="acct-list">${accounts.length ? accounts.map(acctTile).join('') : '<div class="empty">No accounts yet. Contact the bank to open one.</div>'}</div></div>
-            <div class="card"><div class="card-head"><h2>Recent activity</h2></div>${txTable(transactions.slice(0, 8), true)}</div>
+            <div class="card"><div class="card-head"><h2>Recent activity</h2><a href="#/activity">View all activity</a></div>${txTable(transactions.slice(0, 10), true)}
+              ${transactions.length > 10 ? '<div class="show-more"><a class="btn btn-ghost btn-sm" href="#/activity">View all activity</a></div>' : ''}</div>
           </div>
           <div class="stack">
             <div class="card"><div class="card-head"><h3>Quick actions</h3></div>
@@ -143,6 +144,42 @@
           wireMore(q);
         }, 250);
       });
+    },
+
+    async activity() {
+      await refreshAccounts();
+      page.innerHTML = `<div class="card">
+        <div class="card-head" style="flex-wrap:wrap"><h2>All activity</h2>
+          <div class="actions"><input type="search" id="actSearch" placeholder="Search activity" style="width:220px;padding:7px 12px">
+            <select id="actAccount" style="width:auto;padding:7px 12px"><option value="">All accounts</option>
+              ${accounts.map((a) => `<option value="${a.id}">${esc(acctName(a))} ${a.masked}</option>`).join('')}</select></div></div>
+        <div id="actBox"><div class="muted">Loading…</div></div></div>`;
+      const box = $('#actBox');
+      const query = () => `q=${encodeURIComponent($('#actSearch').value.trim())}&account=${$('#actAccount').value}`;
+      const wireMore = (qs) => {
+        const btn = box.querySelector('[data-tx-more]');
+        if (!btn) return;
+        btn.onclick = async () => {
+          const before = Number(box.querySelector('[data-tx-body]').lastElementChild?.dataset.tx) || 0;
+          btn.disabled = true; btn.textContent = 'Loading…';
+          try {
+            const r = await api(`/api/activity?${qs}&before=${before}`);
+            box.querySelector('[data-tx-body]').insertAdjacentHTML('beforeend', txRows(r.transactions, true));
+            btn.closest('.show-more').hidden = !r.more;
+          } catch (e) { toast(e.message, 'error'); }
+          btn.disabled = false; btn.textContent = 'Show more';
+        };
+      };
+      const load = async () => {
+        const qs = query();
+        const r = await api(`/api/activity?${qs}`);
+        box.innerHTML = txTable(r.transactions, true, r.more);
+        wireMore(qs);
+      };
+      let timer;
+      $('#actSearch').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
+      $('#actAccount').addEventListener('change', load);
+      await load();
     },
 
     async transfer() {

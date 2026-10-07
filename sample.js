@@ -61,7 +61,7 @@ const vary = (typical, spread = 0.35) => {
  * The first event is the opening entry; its amount is solved so the account ends at targetCents.
  * For credit accounts (card, loan) the "balance" is the amount owed: 'out' raises it, 'in' lowers it.
  */
-function planAccount(type, targetCents, fromMs, toMs) {
+function planAccount(type, targetCents, fromMs, toMs, extra = 0) {
   const credit = type === 'credit_card' || type === 'loan';
   const ev = [];
   const months = Math.max(1, Math.round((toMs - fromMs) / (30 * DAY)));
@@ -126,6 +126,22 @@ function planAccount(type, targetCents, fromMs, toMs) {
     }
   }
 
+  // Top-up activity so short date ranges still produce a full-looking history.
+  const span = Math.max(0, Math.floor((toMs - fromMs) / DAY));
+  const when = () => randomTime(fromMs + crypto.randomInt(0, span + 1) * DAY);
+  for (let i = 0; i < extra; i++) {
+    if (type === 'checking' || type === 'credit_card') {
+      const [cat, names, lo, hi] = pick(SPEND);
+      ev.push({ time: when(), dir: 'out', cents: cents(rnd(lo, hi)), category: cat, description: type === 'checking' ? `Debit card purchase – ${pick(names)}` : pick(names) });
+    } else if (type === 'loan') {
+      ev.push({ time: when(), dir: 'in', cents: cents(rnd(25, 250)), category: 'loan', description: 'Extra principal payment' });
+    } else {
+      const inbound = Math.random() < 0.6;
+      ev.push({ time: when(), dir: inbound ? 'in' : 'out', cents: cents(rnd(20, 400)), category: 'transfer',
+        description: inbound ? pick(['Transfer from Bridge Checking', 'Mobile deposit', 'Online transfer from checking']) : 'Transfer to Bridge Checking' });
+    }
+  }
+
   ev.sort((a, b) => a.time - b.time);
   return { credit, ev };
 }
@@ -148,14 +164,13 @@ function settle(type, targetCents, fromMs, toMs, plan) {
   // Opening entry = target − net activity, so the account ends exactly on target.
   let opening = targetCents - netOf(real);
   if (opening < 0) {
-    // Activity pushes the balance above target: scale down whatever raises the balance
-    // (income for deposit accounts, purchases for credit accounts) until the opening is ≥ 0.
-    const raisers = real.filter((e) => !e.interest && sign(e) > 0);
-    const total = raisers.reduce((s, e) => s + e.cents, 0);
-    const factor = total ? Math.max(0, (total + opening) / total) : 0;
-    raisers.forEach((e) => { e.cents = Math.floor(e.cents * factor); });
-    for (let i = real.length - 1; i >= 0; i--) if (!real[i].interest && real[i].cents <= 0) real.splice(i, 1);
-    opening = Math.max(0, targetCents - netOf(real));
+    // Activity would leave the balance above target. Keep all the activity, start from zero and
+    // bring it back down at the end: a card payoff for credit accounts, a transfer out otherwise.
+    const excess = -opening;
+    opening = 0;
+    real.push(credit
+      ? { time: toMs + 21 * 3600 * 1000, dir: 'in', cents: excess, category: 'payment', description: 'Payment – thank you' }
+      : { time: toMs + 21 * 3600 * 1000, dir: 'out', cents: excess, category: 'transfer', description: 'Transfer to external account' });
   }
 
   // Never let the balance go below zero along the way: lift the opening and give the lift back
@@ -197,13 +212,31 @@ function settle(type, targetCents, fromMs, toMs, plan) {
 }
 
 /** Generate and post history for each requested account. Caller wraps this in a DB transaction. */
+const MIN_TRANSACTIONS = 40;
+// Which account absorbs top-up activity when a customer would have fewer than MIN_TRANSACTIONS.
+const TOP_UP_ORDER = ['checking', 'credit_card', 'savings', 'money_market', 'investment', 'loan', 'cd'];
+
 function generateHistory(db, { userId, fromMs, toMs, holdings, newAccountNumber, randomDigits, newReference, actorId }) {
-  const created = [];
+  // Plan every account first so the customer's total can be checked before anything is saved.
+  const plans = [];
   for (const [type, dollars] of Object.entries(holdings)) {
     const targetCents = Math.round(Number(dollars) * 100);
     if (!Number.isFinite(targetCents) || targetCents < 0) continue;
     const plan = planAccount(type, targetCents, fromMs, toMs);
-    const rows = settle(type, targetCents, fromMs, toMs, plan);
+    plans.push({ type, targetCents, plan, rows: settle(type, targetCents, fromMs, toMs, plan) });
+  }
+  const primary = plans.slice().sort((a, b) => TOP_UP_ORDER.indexOf(a.type) - TOP_UP_ORDER.indexOf(b.type))[0];
+  for (let tries = 0; primary && tries < 8; tries++) {
+    const total = plans.reduce((s, p) => s + p.rows.length, 0);
+    if (total >= MIN_TRANSACTIONS) break;
+    const extra = (primary.extra || 0) + (MIN_TRANSACTIONS - total) + crypto.randomInt(2, 9);
+    primary.extra = extra;
+    primary.plan = planAccount(primary.type, primary.targetCents, fromMs, toMs, extra);
+    primary.rows = settle(primary.type, primary.targetCents, fromMs, toMs, primary.plan);
+  }
+
+  const created = [];
+  for (const { type, targetCents, plan, rows } of plans) {
     const hasCard = type === 'checking' || type === 'credit_card';
     const credit = plan.credit;
     const limit = type === 'credit_card' ? Math.max(500000, Math.ceil(targetCents * 2 / 100000) * 100000) : 0;

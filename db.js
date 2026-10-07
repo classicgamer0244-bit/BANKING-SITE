@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE INDEX IF NOT EXISTS idx_chatmsg ON chat_messages(chat_id, id);
 
 CREATE INDEX IF NOT EXISTS idx_tx_account ON transactions(account_id, id);
+CREATE INDEX IF NOT EXISTS idx_tx_created ON transactions(account_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_acct_user ON accounts(user_id);
 `);
 
