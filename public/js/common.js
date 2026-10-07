@@ -65,12 +65,13 @@ const CB = (() => {
     `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
   const typeIcon = (t) => ({ checking: 'accounts', savings: 'savings', money_market: 'savings', cd: 'lock', credit_card: 'card', loan: 'loan', investment: 'chart' }[t] || 'accounts');
 
-  const LOGO_MARK = `<svg class="logo-mark" viewBox="0 0 40 40" aria-hidden="true">
-    <rect width="40" height="40" rx="10" fill="#0f3561"/>
-    <path d="M6 27 Q20 8 34 27" fill="none" stroke="#e0a83e" stroke-width="3" stroke-linecap="round"/>
-    <path d="M6 27h28" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
-    <path d="M12 27v-6.5M20 27v-11M28 27v-6.5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
-    <path d="M9 32h22" stroke="#fff" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/></svg>`;
+  const LOGO_MARK = `<svg class="logo-mark" viewBox="586 0 135 73" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path class="logo-red" d="M653.3 72.1c21-18 50.5-35.5 66.7-41.8-2.5-1.6-6.4-3.9-10.8-6.4-20.9 6.9-45.3 22.2-67.1 39.5 3.7 2.8 7.6 5.7 11.2 8.7z" fill="#E31837"/>
+    <path class="logo-blue" d="M643.7 23.2c-3.1-1.5-6.5-2.9-9.1-4.1-7.9 3.9-18.2 9.8-31.2 19.1 2.8 1.5 5.8 3.3 9 5.1 10-7.4 20.1-14.4 31.3-20.1z" fill="#012169"/>
+    <path class="logo-red" d="M662.4 14.6c-3.8-2.1-17-7-26.1-9.1-2.7 1-6.5 2.5-9.1 3.6 3.3.9 15.6 4.2 26.1 9.5 2.7-1.3 6.5-2.9 9.1-4z" fill="#E31837"/>
+    <path class="logo-blue" d="M617.7 13.3c-11.7 5.4-24 12.8-30.7 17.1 2.4 1.1 4.8 2 8.1 3.6 14.8-10 26.4-16.1 31-18.1-3.3-1.2-6.4-2-8.4-2.6z" fill="#012169"/>
+    <path class="logo-red" d="M671.2 11.5c2.7-.9 5.8-1.7 8.5-2.5-7.8-3.3-17.6-6.8-26.4-9-1.4.4-5.6 1.5-8.5 2.4 3 .9 12.9 3.2 26.4 9.1zm-49.3 37.6c3.2 1.9 6.6 4.5 9.9 6.7 21.9-17 43.5-30.1 67.2-37.5-3.3-1.7-6.2-3.2-9.9-5-14.2 3.6-38.5 13.3-67.2 35.8z" fill="#E31837"/>
+  </svg>`;
   const logo = (href = '/') => `<a class="logo" href="${href}" aria-label="CapitalBridge Bank home">${LOGO_MARK}<span class="logo-text">CapitalBridge<small>Bank</small></span></a>`;
 
   function toast(msg, kind = '') {
