@@ -3,11 +3,15 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 try { process.loadEnvFile(path.join(__dirname, '.env')); } catch { /* no .env file */ }
 const {
-  db, tx, BankError, hashPassword, verifyPassword, newAccountNumber, randomDigits,
+  db, tx, BankError, hashPassword, verifyPassword, newAccountNumber, randomDigits, newReference,
   postTransaction, audit, ensureAdmin, isCredit, ACCOUNT_TYPES,
 } = require('./db');
 const { getMarket, getNews } = require('./market');
 const chatbot = require('./chatbot');
+const { generateHistory } = require('./sample');
+
+// Demo mode enables the sample-history generator and shows a "sample data" note on the site.
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
 const PORT = process.env.PORT || 3000;
 const SESSION_HOURS = 8;
@@ -36,6 +40,7 @@ const publicUser = (u) => u && ({
   id: u.id, role: u.role, username: u.username, first_name: u.first_name, last_name: u.last_name,
   email: u.email, phone: u.phone, dob: u.dob, address: u.address, city: u.city, state: u.state, zip: u.zip,
   ssn_last4: u.ssn_last4, status: u.status, must_change_pw: !!u.must_change_pw, created_at: u.created_at, last_login: u.last_login,
+  sample_data: !!u.sample_data,
 });
 const acctView = (a) => ({
   id: a.id, user_id: a.user_id, type: a.type, nickname: a.nickname, number: a.number,
@@ -148,6 +153,8 @@ app.put('/api/me/profile', requireAuth, requireCustomer, wrap((req, res) => {
 }));
 
 // ---------------- public ----------------
+app.get('/api/config', (req, res) => res.json({ demo: DEMO_MODE }));
+
 app.get('/api/market', wrap(async (req, res) => res.json(await getMarket())));
 app.get('/api/news', wrap(async (req, res) => {
   let items = [];
@@ -456,21 +463,52 @@ admin.post('/users', wrap((req, res) => {
   if (password.length < 8) throw new BankError('Temporary password must be at least 8 characters');
   const ssn = str(b.ssn_last4, 4).replace(/\D/g, '');
   const accounts = Array.isArray(b.accounts) ? b.accounts : [];
+  const sample = b.sample ? parseSampleRequest(b.sample) : null;
+  let generated = [];
   const created = tx(() => {
     const r = db.prepare(`INSERT INTO users (role, username, password_hash, first_name, last_name, email, phone, dob, address, city, state, zip, ssn_last4, must_change_pw)
                           VALUES ('customer', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(username, hashPassword(password), first, last, str(b.email, 120), str(b.phone, 30), str(b.dob, 10),
         str(b.address), str(b.city, 80), str(b.state, 40), str(b.zip, 12), ssn, b.must_change_pw === false ? 0 : 1);
     const userId = Number(r.lastInsertRowid);
-    for (const a of accounts) openAccount(userId, a, req.user.id);
+    if (sample) {
+      generated = generateHistory(db, { userId, ...sample, newAccountNumber, randomDigits, newReference, actorId: req.user.id });
+      db.prepare('UPDATE users SET sample_data = 1, created_at = ? WHERE id = ?').run(new Date(sample.fromMs).toISOString().slice(0, 19).replace('T', ' '), userId);
+    } else {
+      for (const a of accounts) openAccount(userId, a, req.user.id);
+    }
     return userId;
   });
-  audit(req.user.id, 'create_customer', `${username} (#${created})`);
+  audit(req.user.id, 'create_customer', `${username} (#${created})${sample ? ` with sample history: ${generated.map((g) => `${g.type} ${g.transactions} tx`).join(', ')}` : ''}`);
   db.prepare('INSERT INTO messages (user_id, subject, body) VALUES (?, ?, ?)').run(created,
     'Welcome to CapitalBridge Bank',
     `Hi ${first}, your online banking profile is ready. For your security, please keep your password private. CapitalBridge will never ask for your password by phone, text or email.`);
-  res.json({ ok: true, id: created });
+  res.json({ ok: true, id: created, generated });
 }));
+
+// Validates a sample-history request from the create-customer form (demo mode only).
+const SAMPLE_TYPES = ['checking', 'savings', 'money_market', 'cd', 'credit_card', 'loan', 'investment'];
+function parseSampleRequest(s) {
+  if (!DEMO_MODE) throw new BankError('Sample history is only available when the site runs in demo mode (DEMO_MODE=true)');
+  const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? Date.parse(v + 'T00:00:00Z') : NaN);
+  const fromMs = day(s.from), toMs = day(s.to);
+  const today = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) throw new BankError('Choose both a From and a To date');
+  if (fromMs >= toMs) throw new BankError('The From date must be before the To date');
+  if (toMs > today) throw new BankError('The To date can’t be in the future');
+  if (toMs - fromMs > 5 * 366 * 86_400_000) throw new BankError('Choose a range of 5 years or less');
+  const holdings = {};
+  for (const t of SAMPLE_TYPES) {
+    const raw = s.holdings?.[t];
+    if (raw === undefined || raw === null || String(raw).trim() === '') continue;
+    const v = Number(raw);
+    if (!Number.isFinite(v) || v < 0) throw new BankError('Account amounts must be zero or more');
+    if (v > 100_000_000) throw new BankError('Account amounts must be $100,000,000 or less');
+    holdings[t] = v;
+  }
+  if (!Object.keys(holdings).length) throw new BankError('Enter an amount for at least one account');
+  return { fromMs, toMs, holdings };
+}
 
 // Standard rates, matching the published product pages. Money market is tiered by balance.
 function standardRate(type, openingDollars = 0) {

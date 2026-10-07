@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new DatabaseSync(path.join(DATA_DIR, 'bank.db'));
@@ -143,6 +143,9 @@ CREATE INDEX IF NOT EXISTS idx_chatmsg ON chat_messages(chat_id, id);
 CREATE INDEX IF NOT EXISTS idx_tx_account ON transactions(account_id, id);
 CREATE INDEX IF NOT EXISTS idx_acct_user ON accounts(user_id);
 `);
+
+// Added after first release: customers whose history was generated in demo mode.
+try { db.exec('ALTER TABLE users ADD COLUMN sample_data INTEGER NOT NULL DEFAULT 0'); } catch { /* column exists */ }
 
 // ---------- helpers ----------
 function hashPassword(pw) {

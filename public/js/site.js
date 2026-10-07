@@ -147,6 +147,11 @@ const SITE = (() => {
       if (e.target.closest('[data-top]')) window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     });
     cookieBanner();
+    fetch('/api/config').then((r) => r.json()).then((c) => {
+      if (!c.demo) return;
+      document.querySelector('.fb-copy')?.insertAdjacentHTML('beforeend',
+        `<div class="demo-line" style="color:#8ea3c0">${t('Demonstration site · accounts and transactions shown are sample data.', 'Sitio de demostración · las cuentas y transacciones son datos de muestra.')}</div>`);
+    }).catch(() => {});
   }
 
   return { lang, t, init, cookieModal, readPrefs, savePrefs, esc };
