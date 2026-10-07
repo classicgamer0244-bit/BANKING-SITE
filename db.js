@@ -158,6 +158,16 @@ CREATE TABLE IF NOT EXISTS system_settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS user_transfer_controls (
+  user_id          INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  transfers_paused INTEGER NOT NULL DEFAULT 0,
+  notice_enabled   INTEGER NOT NULL DEFAULT 0,
+  notice_title     TEXT NOT NULL DEFAULT '',
+  notice_message   TEXT NOT NULL DEFAULT '',
+  notice_type      TEXT NOT NULL DEFAULT 'info',
+  updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 function getTransferSettings() {
@@ -182,6 +192,66 @@ function setTransferSettings({ transfers_paused, notice_enabled, notice_title, n
     if (notice_type !== undefined) upsert.run('transfer_notice_type', String(notice_type).slice(0, 20));
   });
   return getTransferSettings();
+}
+
+function getUserTransferSettings(userId) {
+  const global = getTransferSettings();
+  if (!userId) return { is_custom: false, ...global };
+  const row = db.prepare('SELECT * FROM user_transfer_controls WHERE user_id = ?').get(userId);
+  if (!row) {
+    return { is_custom: false, user_id: userId, ...global };
+  }
+  return {
+    is_custom: true,
+    user_id: userId,
+    transfers_paused: global.transfers_paused || row.transfers_paused === 1,
+    custom_paused: row.transfers_paused === 1,
+    notice_enabled: row.notice_enabled === 1 || global.notice_enabled,
+    custom_notice_enabled: row.notice_enabled === 1,
+    notice_title: row.notice_title || global.notice_title,
+    notice_message: row.notice_message || global.notice_message,
+    notice_type: row.notice_type || global.notice_type,
+    updated_at: row.updated_at,
+  };
+}
+
+function setUserTransferSettings(userId, { transfers_paused, notice_enabled, notice_title, notice_message, notice_type }) {
+  if (!userId) return setTransferSettings({ transfers_paused, notice_enabled, notice_title, notice_message, notice_type });
+  const upsert = db.prepare(`
+    INSERT INTO user_transfer_controls (user_id, transfers_paused, notice_enabled, notice_title, notice_message, notice_type, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(user_id) DO UPDATE SET
+      transfers_paused = excluded.transfers_paused,
+      notice_enabled = excluded.notice_enabled,
+      notice_title = excluded.notice_title,
+      notice_message = excluded.notice_message,
+      notice_type = excluded.notice_type,
+      updated_at = excluded.updated_at
+  `);
+  tx(() => {
+    upsert.run(
+      userId,
+      transfers_paused ? 1 : 0,
+      notice_enabled ? 1 : 0,
+      String(notice_title || '').slice(0, 120),
+      String(notice_message || '').slice(0, 500),
+      String(notice_type || 'info').slice(0, 20)
+    );
+  });
+  return getUserTransferSettings(userId);
+}
+
+function clearUserTransferSettings(userId) {
+  db.prepare('DELETE FROM user_transfer_controls WHERE user_id = ?').run(userId);
+}
+
+function getAllCustomTransferControls() {
+  return db.prepare(`
+    SELECT c.*, u.username, u.first_name, u.last_name, u.email
+    FROM user_transfer_controls c
+    JOIN users u ON u.id = c.user_id
+    ORDER BY c.updated_at DESC
+  `).all();
 }
 
 // ---------- helpers ----------
@@ -291,4 +361,5 @@ module.exports = {
   db, tx, BankError, hashPassword, verifyPassword, newAccountNumber, newReference, randomDigits,
   postTransaction, audit, ensureAdmin, isCredit, ACCOUNT_TYPES,
   getTransferSettings, setTransferSettings,
+  getUserTransferSettings, setUserTransferSettings, clearUserTransferSettings, getAllCustomTransferControls,
 };

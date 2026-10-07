@@ -6,6 +6,7 @@ const {
   db, tx, BankError, hashPassword, verifyPassword, newAccountNumber, randomDigits, newReference,
   postTransaction, audit, ensureAdmin, isCredit, ACCOUNT_TYPES,
   getTransferSettings, setTransferSettings,
+  getUserTransferSettings, setUserTransferSettings, clearUserTransferSettings, getAllCustomTransferControls,
 } = require('./db');
 const { getMarket, getNews } = require('./market');
 const chatbot = require('./chatbot');
@@ -343,13 +344,14 @@ const usable = (a, action) => {
 };
 
 app.get('/api/transfer-settings', wrap((req, res) => {
-  res.json(getTransferSettings());
+  const userId = req.user ? req.user.id : null;
+  res.json(getUserTransferSettings(userId));
 }));
 
 app.post('/api/transfers', requireAuth, requireCustomer, wrap((req, res) => {
-  const settings = getTransferSettings();
+  const settings = getUserTransferSettings(req.user.id);
   if (settings.transfers_paused) {
-    throw new BankError(settings.notice_message || 'Transfers and withdrawals are currently paused by administration.', 403);
+    throw new BankError(settings.notice_message || 'Transfers and withdrawals are currently paused for your account.', 403);
   }
   const amount = toCents(req.body.amount);
   const memo = str(req.body.memo, 120);
@@ -800,11 +802,31 @@ admin.delete('/announcements/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-admin.get('/transfer-settings', (req, res) => res.json(getTransferSettings()));
+admin.get('/transfer-settings', wrap((req, res) => {
+  const userId = req.query.userId && req.query.userId !== 'all' ? Number(req.query.userId) : null;
+  if (userId) {
+    res.json({ target: userId, ...getUserTransferSettings(userId) });
+  } else {
+    res.json({ target: 'all', ...getTransferSettings(), customUsers: getAllCustomTransferControls() });
+  }
+}));
+
 admin.post('/transfer-settings', wrap((req, res) => {
-  const updated = setTransferSettings(req.body);
-  audit(req.user.id, 'update_transfer_settings', updated.transfers_paused ? 'Transfers paused' : 'Transfers active');
-  res.json({ ok: true, settings: updated });
+  const userId = req.body.userId && req.body.userId !== 'all' ? Number(req.body.userId) : null;
+  if (req.body.reset && userId) {
+    clearUserTransferSettings(userId);
+    audit(req.user.id, 'reset_transfer_controls', `Customer #${userId}`);
+    return res.json({ ok: true, reset: true, target: userId, settings: getUserTransferSettings(userId) });
+  }
+  if (userId) {
+    const updated = setUserTransferSettings(userId, req.body);
+    audit(req.user.id, 'update_customer_transfer_controls', `Customer #${userId} (${updated.transfers_paused ? 'paused' : 'active'})`);
+    res.json({ ok: true, target: userId, settings: updated });
+  } else {
+    const updated = setTransferSettings(req.body);
+    audit(req.user.id, 'update_transfer_settings', updated.transfers_paused ? 'Transfers paused bank-wide' : 'Transfers active bank-wide');
+    res.json({ ok: true, target: 'all', settings: updated });
+  }
 }));
 
 admin.get('/requests', (req, res) => {

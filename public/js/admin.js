@@ -280,6 +280,7 @@
             <div style="display:flex;gap:14px;align-items:center"><div class="avatar" style="width:52px;height:52px;font-size:18px">${esc(u.first_name[0] || '')}${esc(u.last_name[0] || '')}</div>
               <div><h2 style="font-size:22px">${esc(u.first_name)} ${esc(u.last_name)} ${statusBadge(u.status)}</h2><div class="small muted">User ID ${esc(u.username)} · Customer #${u.id} · Last sign-in ${u.last_login ? dateTime(u.last_login) : 'never'}</div></div></div>
             <div class="actions">
+              <a class="btn btn-sm btn-ghost" href="#/transfers?userId=${u.id}">Transfer controls</a>
               <button class="btn btn-sm btn-ghost" data-act="edit">Edit profile</button>
               <button class="btn btn-sm btn-ghost" data-act="reset">Reset password</button>
               <button class="btn btn-sm btn-ghost" data-act="message">Send message</button>
@@ -573,100 +574,235 @@
         </tbody></table></div></div>`;
     },
 
-    async transfers() {
-      const s = await api('/api/admin/transfer-settings');
-      page.innerHTML = `
-        <div class="card" style="max-width:680px">
-          <div class="card-head">
-            <div>
-              <h2>Transfer &amp; Withdrawal Controls</h2>
-              <p class="small muted" style="margin:2px 0 0">Control customer transfer availability, pause transfers bank-wide, and configure notice popups.</p>
+    async transfers(arg, query) {
+      const initialTarget = query?.get?.('userId') || 'all';
+      const [{ users }, globalData] = await Promise.all([
+        api('/api/admin/users?q='),
+        api('/api/admin/transfer-settings'),
+      ]);
+
+      let currentTarget = initialTarget;
+      let currentSettings = null;
+
+      async function loadSettings(target) {
+        currentTarget = target;
+        currentSettings = await api('/api/admin/transfer-settings' + (target !== 'all' ? `?userId=${target}` : ''));
+        render();
+      }
+
+      function render() {
+        const isAll = currentTarget === 'all';
+        const s = currentSettings || globalData;
+        const customUsers = globalData.customUsers || [];
+        const isPaused = isAll ? !!s.transfers_paused : (!!s.transfers_paused || !!s.custom_paused);
+        const isCustom = !isAll && !!s.is_custom;
+
+        page.innerHTML = `
+          <div style="max-width:760px;display:flex;flex-direction:column;gap:20px">
+            <div class="card">
+              <div class="card-head" style="flex-wrap:wrap;gap:12px">
+                <div>
+                  <h2>Transfer &amp; Withdrawal Controls</h2>
+                  <p class="small muted" style="margin:2px 0 0">Control transfer availability, pause transfers, and configure popup notices bank-wide or per-customer.</p>
+                </div>
+                <span class="badge ${isPaused ? 'bad' : 'good'}" style="font-size:13px;padding:4px 12px">
+                  ${isPaused ? '⛔ Transfers Paused' : '✓ Active & Normal'}
+                </span>
+              </div>
+
+              <!-- Customer Selector -->
+              <div style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0">
+                <div class="field" style="margin-bottom:0">
+                  <label style="font-weight:700;display:flex;justify-content:space-between;align-items:center">
+                    <span>Target Customer / Scope</span>
+                    ${isCustom ? '<span class="badge warn" style="font-size:11px">Custom rules applied</span>' : (isAll ? '<span class="badge" style="font-size:11px">Bank-wide settings</span>' : '<span class="badge info" style="font-size:11px">Inheriting bank-wide</span>')}
+                  </label>
+                  <select id="targetScopeSelect" style="font-size:14px;padding:10px 12px;font-weight:600">
+                    <option value="all" ${currentTarget === 'all' ? 'selected' : ''}>🌐 All customers (Bank-wide settings)</option>
+                    <optgroup label="Select individual customer">
+                      ${users.map((u) => {
+                        const hasCustom = customUsers.some((c) => c.user_id === u.id);
+                        return `<option value="${u.id}" ${String(currentTarget) === String(u.id) ? 'selected' : ''}>
+                          👤 ${esc(u.first_name)} ${esc(u.last_name)} (${esc(u.username)})${hasCustom ? ' ★ [Custom rules]' : ''}
+                        </option>`;
+                      }).join('')}
+                    </optgroup>
+                  </select>
+                  <div class="small muted" style="margin-top:6px">
+                    ${isAll ? 'Changes made here will apply to all customers who do not have custom individual rules set.' : 'Changes made here will apply specifically to this selected customer.'}
+                  </div>
+                </div>
+              </div>
+
+              <form id="transferSettingsForm">
+                <div class="form-error"></div>
+                
+                <div style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0">
+                  <label class="check" style="font-size:15px;cursor:pointer">
+                    <input type="checkbox" name="transfers_paused" ${((isAll ? s.transfers_paused : s.custom_paused) ? 'checked' : '')}>
+                    <div>
+                      <b>${isAll ? 'Pause transfers and withdrawals bank-wide' : 'Pause transfers and withdrawals for this customer'}</b>
+                      <div class="small muted">
+                        ${isAll
+                          ? 'When checked, any customer attempting a transfer or withdrawal will see the popup notice and cannot submit transfers.'
+                          : 'When checked, this customer will see the popup notice and cannot submit transfers or withdrawals.'}
+                      </div>
+                    </div>
+                  </label>
+                  ${!isAll && globalData.transfers_paused ? '<div class="notice bad" style="margin-top:10px;font-size:12px">⚠️ Note: Bank-wide transfers are currently paused globally. All transfers remain stopped regardless of individual settings.</div>' : ''}
+                </div>
+
+                <div style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0">
+                  <label class="check" style="font-size:15px;cursor:pointer;margin-bottom:12px">
+                    <input type="checkbox" name="notice_enabled" ${((isAll ? s.notice_enabled : s.custom_notice_enabled) ? 'checked' : '')}>
+                    <div>
+                      <b>Show pop-up notice when transfer or withdrawal is clicked</b>
+                      <div class="small muted">Shows an immediate modal popup dialog to the customer when they tap Transfer or enter the move-money page.</div>
+                    </div>
+                  </label>
+
+                  <div class="field" style="margin-top:12px">
+                    <label>Notice title</label>
+                    <input name="notice_title" value="${esc(s.notice_title || '')}" maxlength="120" placeholder="e.g. Important Transfer Notice">
+                  </div>
+
+                  <div class="field">
+                    <label>Notice type / styling</label>
+                    <select name="notice_type">
+                      <option value="info" ${s.notice_type === 'info' ? 'selected' : ''}>Information (Blue)</option>
+                      <option value="warning" ${s.notice_type === 'warning' ? 'selected' : ''}>Warning / Notice (Gold)</option>
+                      <option value="paused" ${s.notice_type === 'paused' ? 'selected' : ''}>Urgent / Paused (Red)</option>
+                    </select>
+                  </div>
+
+                  <div class="field" style="margin-bottom:0">
+                    <label>Notice message for customer</label>
+                    <textarea name="notice_message" rows="4" maxlength="500" placeholder="Message shown in the popup modal...">${esc(s.notice_message || '')}</textarea>
+                  </div>
+                </div>
+
+                <div style="display:flex;gap:12px;align-items:center;margin-top:20px;flex-wrap:wrap">
+                  <button class="btn btn-gold" type="submit">
+                    ${isAll ? 'Save bank-wide settings' : 'Save for this customer'}
+                  </button>
+                  ${isCustom ? '<button type="button" class="btn btn-ghost" id="resetCustomBtn" style="color:var(--bad)">Reset to bank-wide</button>' : ''}
+                  <button type="button" class="btn btn-ghost" id="previewNoticeBtn">Preview pop-up</button>
+                  ${!isAll ? `<a href="#/customer/${currentTarget}" class="link-btn small" style="margin-left:auto">View customer profile →</a>` : ''}
+                </div>
+              </form>
             </div>
-            <span class="badge ${s.transfers_paused ? 'bad' : 'good'}" style="font-size:13px;padding:4px 12px">
-              ${s.transfers_paused ? '⛔ Transfers Paused' : '✓ Active & Normal'}
-            </span>
+
+            <!-- List of Customers with Custom Controls -->
+            <div class="card">
+              <div class="card-head">
+                <div>
+                  <h3 style="font-size:17px">Customers with custom rules</h3>
+                  <div class="small muted">Customers who have individual transfer pauses or custom notice messages configured.</div>
+                </div>
+                <span class="badge">${customUsers.length}</span>
+              </div>
+              ${customUsers.length ? `
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Customer</th>
+                        <th>User ID</th>
+                        <th>Transfers</th>
+                        <th>Notice</th>
+                        <th>Notice Title</th>
+                        <th class="amt">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${customUsers.map((c) => `
+                        <tr>
+                          <td><b>${esc(c.first_name)} ${esc(c.last_name)}</b></td>
+                          <td>${esc(c.username)}</td>
+                          <td>
+                            ${c.transfers_paused ? '<span class="badge bad">⛔ Paused</span>' : '<span class="badge good">Active</span>'}
+                          </td>
+                          <td>
+                            ${c.notice_enabled ? '<span class="badge warn">Popup ON</span>' : '<span class="badge">Off</span>'}
+                          </td>
+                          <td class="small muted">${esc(c.notice_title || '—')}</td>
+                          <td class="amt">
+                            <button class="btn btn-sm btn-ghost" data-select-user="${c.user_id}">Configure</button>
+                          </td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              ` : '<div class="empty">No individual customer restrictions set. All customers are currently using the default bank-wide rules.</div>'}
+            </div>
           </div>
-          <form id="transferSettingsForm">
-            <div class="form-error"></div>
-            
-            <div style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0">
-              <label class="check" style="font-size:15px;cursor:pointer">
-                <input type="checkbox" name="transfers_paused" ${s.transfers_paused ? 'checked' : ''}>
-                <div>
-                  <b>Pause transfers and withdrawals bank-wide</b>
-                  <div class="small muted">When checked, any customer attempting a transfer or withdrawal will see the popup notice and cannot submit transfers.</div>
-                </div>
-              </label>
-            </div>
+        `;
 
-            <div style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0">
-              <label class="check" style="font-size:15px;cursor:pointer;margin-bottom:12px">
-                <input type="checkbox" name="notice_enabled" ${s.notice_enabled ? 'checked' : ''}>
-                <div>
-                  <b>Show pop-up notice when transfer or withdrawal is clicked</b>
-                  <div class="small muted">Shows an immediate modal popup dialog to customers when they tap Transfer or enter the move-money page.</div>
-                </div>
-              </label>
+        $('#targetScopeSelect').onchange = (e) => {
+          loadSettings(e.target.value);
+        };
 
-              <div class="field" style="margin-top:12px">
-                <label>Notice title</label>
-                <input name="notice_title" value="${esc(s.notice_title)}" maxlength="120" placeholder="e.g. Important Transfer Notice">
-              </div>
-
-              <div class="field">
-                <label>Notice type / styling</label>
-                <select name="notice_type">
-                  <option value="info" ${s.notice_type === 'info' ? 'selected' : ''}>Information (Blue)</option>
-                  <option value="warning" ${s.notice_type === 'warning' ? 'selected' : ''}>Warning / Notice (Gold)</option>
-                  <option value="paused" ${s.notice_type === 'paused' ? 'selected' : ''}>Urgent / Paused (Red)</option>
-                </select>
-              </div>
-
-              <div class="field" style="margin-bottom:0">
-                <label>Notice message for customers</label>
-                <textarea name="notice_message" rows="4" maxlength="500" placeholder="Message shown to customers in the popup modal...">${esc(s.notice_message)}</textarea>
-              </div>
-            </div>
-
-            <div style="display:flex;gap:12px;align-items:center;margin-top:20px">
-              <button class="btn btn-gold" type="submit">Save transfer settings</button>
-              <button type="button" class="btn btn-ghost" id="previewNoticeBtn">Preview pop-up</button>
-            </div>
-          </form>
-        </div>`;
-
-      $('#previewNoticeBtn').onclick = () => {
-        const f = formData($('#transferSettingsForm'));
-        modal({
-          title: f.notice_title || 'Transfer Notice',
-          submitText: 'Close preview',
-          body: `<div style="padding:4px 0">
-            <div class="badge ${f.notice_type === 'paused' ? 'bad' : f.notice_type === 'warning' ? 'warn' : 'info'}" style="margin-bottom:10px">
-              ${f.transfers_paused ? 'Transfers paused' : (f.notice_type || 'info').toUpperCase()}
-            </div>
-            <p style="font-size:15px;line-height:1.6">${esc(f.notice_message || 'No message entered')}</p>
-          </div>`,
-          onSubmit: () => {},
+        page.querySelectorAll('[data-select-user]').forEach((btn) => {
+          btn.onclick = () => loadSettings(btn.dataset.selectUser);
         });
-      };
 
-      $('#transferSettingsForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const er = e.target.querySelector('.form-error'); er.classList.remove('show');
-        const f = formData(e.target);
-        try {
-          const body = {
-            transfers_paused: !!e.target.transfers_paused.checked,
-            notice_enabled: !!e.target.notice_enabled.checked,
-            notice_title: f.notice_title,
-            notice_message: f.notice_message,
-            notice_type: f.notice_type,
+        const resetBtn = $('#resetCustomBtn');
+        if (resetBtn) {
+          resetBtn.onclick = async () => {
+            if (!confirm('Reset this customer back to default bank-wide transfer settings?')) return;
+            try {
+              await api('/api/admin/transfer-settings', { body: { userId: currentTarget, reset: true } });
+              toast('Customer reset to bank-wide settings', 'success');
+              const g = await api('/api/admin/transfer-settings');
+              globalData.customUsers = g.customUsers;
+              loadSettings(currentTarget);
+            } catch (ex) {
+              toast(ex.message, 'bad');
+            }
           };
-          await api('/api/admin/transfer-settings', { body });
-          toast('Transfer controls and notice updated', 'success');
-          views.transfers();
-        } catch (ex) { er.textContent = ex.message; er.classList.add('show'); }
-      });
+        }
+
+        $('#previewNoticeBtn').onclick = () => {
+          const f = formData($('#transferSettingsForm'));
+          modal({
+            title: f.notice_title || 'Transfer Notice',
+            submitText: 'Close preview',
+            body: `<div style="padding:4px 0">
+              <div class="badge ${f.notice_type === 'paused' ? 'bad' : f.notice_type === 'warning' ? 'warn' : 'info'}" style="margin-bottom:10px">
+                ${f.transfers_paused ? 'Transfers paused' : (f.notice_type || 'info').toUpperCase()}
+              </div>
+              <p style="font-size:15px;line-height:1.6">${esc(f.notice_message || 'No message entered')}</p>
+            </div>`,
+            onSubmit: () => {},
+          });
+        };
+
+        $('#transferSettingsForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const er = e.target.querySelector('.form-error'); er.classList.remove('show');
+          const f = formData(e.target);
+          try {
+            const body = {
+              userId: currentTarget,
+              transfers_paused: !!e.target.transfers_paused.checked,
+              notice_enabled: !!e.target.notice_enabled.checked,
+              notice_title: f.notice_title,
+              notice_message: f.notice_message,
+              notice_type: f.notice_type,
+            };
+            await api('/api/admin/transfer-settings', { body });
+            toast(isAll ? 'Bank-wide transfer settings updated' : 'Customer transfer settings updated', 'success');
+            const g = await api('/api/admin/transfer-settings');
+            globalData.customUsers = g.customUsers;
+            loadSettings(currentTarget);
+          } catch (ex) {
+            er.textContent = ex.message; er.classList.add('show');
+          }
+        });
+      }
+
+      await loadSettings(initialTarget);
     },
 
     async settings() {
@@ -692,13 +828,15 @@
   };
 
   async function route() {
-    const [, name = 'dashboard', arg] = location.hash.split('/');
+    const rawHash = location.hash.replace(/^#\/?/, '');
+    const [pathPart, queryPart] = rawHash.split('?');
+    const [name = 'dashboard', arg] = pathPart.split('/');
     const view = views[name] ? name : 'dashboard';
     renderNav(view === 'customer' ? 'customers' : view);
     $('#pageTitle').textContent = (NAV.find((n) => n[0] === view) || [, , 'Customer'])[2];
     $('#sidebar').classList.remove('open');
     page.innerHTML = '<div class="muted">Loading…</div>';
-    try { await views[view](arg); } catch (e) { page.innerHTML = `<div class="card"><div class="empty">${esc(e.message)}</div></div>`; }
+    try { await views[view](arg, new URLSearchParams(queryPart || '')); } catch (e) { page.innerHTML = `<div class="card"><div class="empty">${esc(e.message)}</div></div>`; }
     window.scrollTo(0, 0);
   }
 
