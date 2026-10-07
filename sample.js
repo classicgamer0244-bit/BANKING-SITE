@@ -155,12 +155,13 @@ function settle(type, targetCents, fromMs, toMs, plan) {
     bal += sign(e) * e.cents;
     rows.push(e);
   }
-  // Interest moves the total by a few cents; settle the difference with the opening entry,
-  // or a final entry if the opening can't absorb it.
+  // Interest moves the total away from the target (by a lot over decades). Settle it with one final
+  // transfer on the last day: it comes after every other entry, so no earlier balance changes.
   const diff = targetCents - bal;
   if (diff !== 0) {
-    if (rows[0].cents + diff >= 0) rows[0].cents += diff;
-    else rows.push({ time: closing + 60_000, dir: (diff > 0) !== credit ? 'in' : 'out', cents: Math.abs(diff), category: 'adjustment', description: 'Balance adjustment' });
+    const up = (diff > 0) !== credit; // money into the account?
+    rows.push({ time: closing + 60_000, dir: up ? 'in' : 'out', cents: Math.abs(diff), category: 'transfer',
+      description: up ? 'Transfer from Bridge Checking' : 'Transfer to Bridge Checking' });
   }
   return rows.filter((r) => r.cents > 0);
 }

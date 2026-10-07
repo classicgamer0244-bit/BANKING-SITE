@@ -494,9 +494,9 @@ function parseSampleRequest(s) {
   const fromMs = day(s.from), toMs = day(s.to);
   const today = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
   if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) throw new BankError('Choose both a From and a To date');
-  if (fromMs >= toMs) throw new BankError('The From date must be before the To date');
+  if (fromMs > toMs) throw new BankError('The From date can’t be after the To date');
   if (toMs > today) throw new BankError('The To date can’t be in the future');
-  if (toMs - fromMs > 5 * 366 * 86_400_000) throw new BankError('Choose a range of 5 years or less');
+  if (fromMs < Date.UTC(1900, 0, 1)) throw new BankError('Choose a From date in 1900 or later');
   const holdings = {};
   for (const t of SAMPLE_TYPES) {
     const raw = s.holdings?.[t];
