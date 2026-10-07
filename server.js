@@ -8,7 +8,7 @@ const {
 } = require('./db');
 const { getMarket, getNews } = require('./market');
 const chatbot = require('./chatbot');
-const { generateHistory } = require('./sample');
+const { generateHistory, generateMessages } = require('./sample');
 
 // Demo mode enables the sample-history generator and shows a "sample data" note on the site.
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
@@ -476,6 +476,7 @@ admin.post('/users', wrap((req, res) => {
     const userId = Number(r.lastInsertRowid);
     if (sample) {
       generated = generateHistory(db, { userId, ...sample, newAccountNumber, randomDigits, newReference, actorId: req.user.id });
+      generateMessages(db, { userId, firstName: first, fromMs: sample.fromMs, toMs: sample.toMs, accounts: generated });
       db.prepare('UPDATE users SET sample_data = 1, created_at = ? WHERE id = ?').run(new Date(sample.fromMs).toISOString().slice(0, 19).replace('T', ' '), userId);
     } else {
       for (const a of accounts) openAccount(userId, a, req.user.id);
@@ -483,7 +484,8 @@ admin.post('/users', wrap((req, res) => {
     return userId;
   });
   audit(req.user.id, 'create_customer', `${username} (#${created})${sample ? ` with sample history: ${generated.map((g) => `${g.type} ${g.transactions} tx`).join(', ')}` : ''}`);
-  db.prepare('INSERT INTO messages (user_id, subject, body) VALUES (?, ?, ?)').run(created,
+  // Sample customers already have a dated welcome message in their generated history.
+  if (!sample) db.prepare('INSERT INTO messages (user_id, subject, body) VALUES (?, ?, ?)').run(created,
     'Welcome to CapitalBridge Bank',
     `Hi ${first}, your online banking profile is ready. For your security, please keep your password private. CapitalBridge will never ask for your password by phone, text or email.`);
   res.json({ ok: true, id: created, generated });

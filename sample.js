@@ -44,6 +44,18 @@ function eachMonth(fromMs, toMs, dayOfMonth) {
   return out;
 }
 
+// Monthly dates that drift a few days around baseDay and sometimes skip a month entirely.
+function eachMonthLoose(fromMs, toMs, baseDay, { jitter = 3, skip = 0 } = {}) {
+  return eachMonth(fromMs, toMs, 1)
+    .map((first) => first + (Math.min(28, Math.max(1, baseDay + crypto.randomInt(-jitter, jitter + 1))) - 1) * DAY)
+    .filter((t) => t >= fromMs && t <= toMs && Math.random() >= skip);
+}
+// A varied amount around a typical value; sometimes a round figure like a person would type.
+const vary = (typical, spread = 0.35) => {
+  const v = typical * rnd(1 - spread, 1 + spread);
+  return Math.random() < 0.3 ? Math.max(5, Math.round(v / 25) * 25) : v;
+};
+
 /**
  * Build the event list for one account. Each event: {time, dir: 'in'|'out', cents, category, description}.
  * The first event is the opening entry; its amount is solved so the account ends at targetCents.
@@ -56,13 +68,23 @@ function planAccount(type, targetCents, fromMs, toMs) {
 
   if (type === 'checking') {
     const employer = pick(EMPLOYERS);
-    const pay = rnd(1400, 3200);
-    for (const t of eachDay(fromMs, toMs, 14, crypto.randomInt(1, 10))) ev.push({ time: randomTime(t), dir: 'in', cents: cents(pay * rnd(0.98, 1.02)), category: 'payroll', description: `Direct deposit – ${employer} payroll` });
-    const rent = rnd(900, 2200);
-    for (const t of eachMonth(fromMs, toMs, 1)) ev.push({ time: randomTime(t), dir: 'out', cents: cents(rent), category: 'rent', description: 'Rent payment – Parkside Apartments' });
+    let pay = rnd(1400, 3200);
+    for (const t of eachDay(fromMs, toMs, 14, crypto.randomInt(1, 10))) {
+      if (Math.random() < 0.04) pay *= rnd(1.02, 1.06); // occasional raise
+      ev.push({ time: randomTime(t), dir: 'in', cents: cents(pay * rnd(0.93, 1.09)), category: 'payroll', description: `Direct deposit – ${employer} payroll` });
+    }
+    // A yearly bonus now and then.
+    for (const t of eachMonthLoose(fromMs, toMs, 15, { jitter: 10 })) if (new Date(t).getUTCMonth() === 11 && Math.random() < 0.6)
+      ev.push({ time: randomTime(t), dir: 'in', cents: cents(pay * rnd(0.5, 1.5)), category: 'payroll', description: `Direct deposit – ${employer} annual bonus` });
+    // Rent holds for a 12-month lease, then goes up at renewal; paid within the first few days.
+    let rent = rnd(900, 2200), leaseMonths = 0;
+    for (const t of eachMonthLoose(fromMs, toMs, 2, { jitter: 1 })) {
+      if (leaseMonths++ && leaseMonths % 12 === 1) rent *= rnd(1.02, 1.07);
+      ev.push({ time: randomTime(t), dir: 'out', cents: cents(rent), category: 'rent', description: 'Rent payment – Parkside Apartments' });
+    }
     for (const [cat, name, lo, hi] of BILLS) {
       const due = crypto.randomInt(3, 27);
-      for (const t of eachMonth(fromMs, toMs, due)) ev.push({ time: randomTime(t), dir: 'out', cents: cents(rnd(lo, hi)), category: cat, description: `${name} – autopay` });
+      for (const t of eachMonthLoose(fromMs, toMs, due, { jitter: 2 })) ev.push({ time: randomTime(t), dir: 'out', cents: cents(rnd(lo, hi)), category: cat, description: `${name} – autopay` });
     }
     const days = Math.round((toMs - fromMs) / DAY);
     const purchases = Math.round(days * rnd(0.6, 1.1));
@@ -74,15 +96,19 @@ function planAccount(type, targetCents, fromMs, toMs) {
       ev.push({ time: randomTime(fromMs + crypto.randomInt(0, days + 1) * DAY), dir: 'out', cents: cents(rnd(40, 300)), category: 'withdrawal', description: 'ATM withdrawal – CapitalBridge ATM' });
     }
   } else if (type === 'savings' || type === 'money_market') {
-    const monthly = rnd(100, 600);
-    for (const t of eachMonth(fromMs, toMs, crypto.randomInt(2, 25))) ev.push({ time: randomTime(t), dir: 'in', cents: cents(monthly), category: 'transfer', description: 'Automatic transfer from Bridge Checking' });
+    const typical = rnd(100, 600);
+    for (const t of eachMonthLoose(fromMs, toMs, crypto.randomInt(3, 25), { jitter: 6, skip: 0.25 }))
+      ev.push({ time: randomTime(t), dir: 'in', cents: cents(vary(typical, 0.6)), category: 'transfer', description: pick(['Transfer from Bridge Checking', 'Transfer from Bridge Checking', 'Online transfer from checking', 'Mobile deposit']) });
     for (const t of eachMonth(fromMs, toMs, 28)) ev.push({ time: randomTime(t), dir: 'in', cents: 1, category: 'interest', description: 'Interest payment', interest: true });
     for (let i = 0; i < Math.round(months / 6); i++) ev.push({ time: randomTime(fromMs + crypto.randomInt(30, Math.max(31, Math.round((toMs - fromMs) / DAY))) * DAY), dir: 'out', cents: cents(rnd(200, 1500)), category: 'transfer', description: 'Transfer to Bridge Checking' });
   } else if (type === 'cd') {
     for (const t of eachMonth(fromMs, toMs, 28)) ev.push({ time: randomTime(t), dir: 'in', cents: 1, category: 'interest', description: 'Interest payment', interest: true });
   } else if (type === 'investment') {
-    const monthly = rnd(150, 900);
-    for (const t of eachMonth(fromMs, toMs, 15)) ev.push({ time: randomTime(t), dir: 'in', cents: cents(monthly), category: 'deposit', description: 'Recurring contribution' });
+    const typical = rnd(150, 900);
+    for (const t of eachMonthLoose(fromMs, toMs, crypto.randomInt(5, 25), { jitter: 7, skip: 0.2 }))
+      ev.push({ time: randomTime(t), dir: 'in', cents: cents(vary(typical, 0.5)), category: 'deposit', description: pick(['Contribution', 'Contribution', 'Transfer from Bridge Checking', 'Deposit']) });
+    // Dividends a few times a year.
+    for (const t of eachMonthLoose(fromMs, toMs, 20, { jitter: 5, skip: 0.7 })) ev.push({ time: randomTime(t), dir: 'in', cents: cents(rnd(4, 120)), category: 'interest', description: 'Dividend reinvestment' });
   } else if (type === 'credit_card') {
     const days = Math.round((toMs - fromMs) / DAY);
     const purchases = Math.round(days * rnd(0.3, 0.6));
@@ -90,10 +116,14 @@ function planAccount(type, targetCents, fromMs, toMs) {
       const [cat, names, lo, hi] = pick(SPEND);
       ev.push({ time: randomTime(fromMs + crypto.randomInt(1, days + 1) * DAY), dir: 'out', cents: cents(rnd(lo, hi)), category: cat, description: pick(names) });
     }
-    for (const t of eachMonth(fromMs, toMs, 22)) ev.push({ time: randomTime(t), dir: 'in', cents: 0, category: 'payment', description: 'Payment – thank you', ccPayment: true });
+    for (const t of eachMonthLoose(fromMs, toMs, 22, { jitter: 4 })) ev.push({ time: randomTime(t), dir: 'in', cents: 0, category: 'payment', description: 'Payment – thank you', ccPayment: true });
   } else if (type === 'loan') {
     const payment = Math.max(50, Math.round(targetCents / 100 * rnd(0.02, 0.035)));
-    for (const t of eachMonth(fromMs, toMs, 5)) if (t > fromMs + 20 * DAY) ev.push({ time: randomTime(t), dir: 'in', cents: cents(payment), category: 'loan', description: 'Loan payment – autopay' });
+    for (const t of eachMonthLoose(fromMs, toMs, 5, { jitter: 3 })) if (t > fromMs + 20 * DAY) {
+      ev.push({ time: randomTime(t), dir: 'in', cents: cents(payment), category: 'loan', description: 'Loan payment – autopay' });
+      const extraDay = t + crypto.randomInt(3, 15) * DAY;
+      if (Math.random() < 0.12 && extraDay <= toMs) ev.push({ time: randomTime(extraDay), dir: 'in', cents: cents(vary(payment, 0.8)), category: 'loan', description: 'Extra principal payment' });
+    }
   }
 
   ev.sort((a, b) => a.time - b.time);
@@ -178,8 +208,9 @@ function generateHistory(db, { userId, fromMs, toMs, holdings, newAccountNumber,
     const credit = plan.credit;
     const limit = type === 'credit_card' ? Math.max(500000, Math.ceil(targetCents * 2 / 100000) * 100000) : 0;
     const rate = { checking: 0.01, savings: 0.01, money_market: targetCents >= 2_500_000 ? 0.03 : targetCents >= 1_000_000 ? 0.02 : 0.01, cd: 0.03, credit_card: 21.99, loan: 9.49 }[type] || 0;
+    const number = newAccountNumber(), cardLast4 = hasCard ? randomDigits(4) : '';
     const acct = db.prepare(`INSERT INTO accounts (user_id, type, number, credit_limit_cents, rate, card_last4, opened_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(userId, type, newAccountNumber(), limit, rate, hasCard ? randomDigits(4) : '', at(fromMs));
+      .run(userId, type, number, limit, rate, cardLast4, at(fromMs));
     const accountId = Number(acct.lastInsertRowid);
     let bal = 0;
     const ins = db.prepare(`INSERT INTO transactions (account_id, direction, amount_cents, balance_after, category, description, reference, created_by, created_at)
@@ -189,9 +220,82 @@ function generateHistory(db, { userId, fromMs, toMs, holdings, newAccountNumber,
       ins.run(accountId, r.dir, r.cents, bal, r.category, r.description, newReference(), actorId, at(r.time));
     }
     db.prepare('UPDATE accounts SET balance_cents = ? WHERE id = ?').run(bal, accountId);
-    created.push({ type, accountId, transactions: rows.length, balance: bal / 100 });
+    created.push({ type, accountId, number, card_last4: cardLast4, transactions: rows.length, balance: bal / 100 });
   }
   return created;
 }
 
-module.exports = { generateHistory };
+// ---------- message history ----------
+const ACCOUNT_NAME = { checking: 'Bridge Checking', savings: 'Bridge Savings', money_market: 'Money Market', cd: 'Certificate of Deposit',
+  credit_card: 'Bridge Rewards Card', loan: 'Personal Loan', investment: 'Bridge Invest account' };
+// [subject, question, answer, account type the topic needs (or null)]
+const QUESTIONS = [
+  ['Setting up direct deposit', 'Hi, how do I set up direct deposit with my employer?',
+    'Thanks for reaching out! Sign in to Online Banking and open your checking account — your account number and our routing number (021000555) are shown at the top. Give both to your payroll department and deposits usually start within one or two pay cycles.', 'checking'],
+  ['Question about a pending charge', 'I see a charge that is still pending from last weekend. When will it post?',
+    'Good question. Pending card charges usually post within 1–3 business days once the merchant finalizes them. If it hasn’t posted after 5 business days, reply here and we’ll look into it with you.', null],
+  ['Travel notice', 'I’m traveling overseas next month. Do I need to tell you before using my card?',
+    'Thanks for letting us know — have a great trip! No travel notice is needed; our fraud monitoring recognizes travel automatically. Bridge Rewards Card has no foreign transaction fees. Keep the 24/7 number on the back of your card handy just in case.', 'credit_card'],
+  ['Order checks', 'How can I order a new box of checks?',
+    'We’ve placed an order for a new box of checks to the address on file. They usually arrive within 7–10 business days. Let us know if you need anything else!', 'checking'],
+  ['Increase card limit', 'Is it possible to raise my credit card limit?',
+    'We reviewed your account and you’re eligible for a credit line review. A specialist will follow up by phone within 2 business days with the details and next steps.', 'credit_card'],
+  ['Paper statements', 'Can I switch back to paper statements?',
+    'Done — your statements will arrive by mail starting next cycle, and they’ll also stay available in Online Banking.', null],
+];
+
+function generateMessages(db, { userId, firstName, fromMs, toMs, accounts }) {
+  const msgs = [];
+  const add = (time, subject, body, fromAdmin = 1) => { if (time >= fromMs && time <= toMs + DAY - 1) msgs.push({ time, subject, body, fromAdmin }); };
+  const types = new Set(accounts.map((a) => a.type));
+  const ending = (a) => `${ACCOUNT_NAME[a.type] || a.type} ending in ${a.number.slice(-4)}`;
+  const t0 = fromMs + 9 * 3600 * 1000;
+
+  add(t0, 'Welcome to CapitalBridge Bank',
+    `Hi ${firstName}, welcome to CapitalBridge! Your accounts are open and ready:\n${accounts.map((a) => `• ${ending(a)}`).join('\n')}\n\nFor your security, never share your password, PIN or one-time passcode. CapitalBridge will never ask for them by phone, text or email.`);
+  for (const a of accounts) {
+    if (a.type === 'checking') add(randomTime(fromMs + crypto.randomInt(1, 4) * DAY), 'Your debit card is on its way',
+      `Your Bridge debit card ending in ${a.card_last4} has shipped and should arrive within 7–10 business days. Once it arrives, you can start using it right away — and you can lock it any time from Cards in Online Banking.`);
+    if (a.type === 'credit_card') add(randomTime(fromMs + crypto.randomInt(1, 5) * DAY), 'Your Bridge Rewards Card has shipped',
+      `Good news, ${firstName} — your Bridge Rewards Card ending in ${a.card_last4} is in the mail. You'll earn 3% cash back on dining and travel, 2% at grocery stores and 1% on everything else.`);
+    if (a.type === 'loan') add(t0 + 3600 * 1000, 'Your personal loan has been funded',
+      `Your personal loan (${ending(a)}) has been funded. Payments are set up on autopay around the 5th of each month. You can pay extra toward principal any time with no prepayment penalty.`);
+  }
+  add(randomTime(fromMs + crypto.randomInt(4, 9) * DAY), 'You’re enrolled in paperless statements',
+    'Your statements will now be delivered securely in Online Banking. We’ll send you a message each time a new statement is ready.');
+  if (types.has('checking')) add(randomTime(fromMs + crypto.randomInt(12, 25) * DAY), 'Direct deposit received',
+    'Your first direct deposit has arrived in Bridge Checking. Thanks for banking with us!');
+
+  // Statement notices: monthly for the last two years, quarterly before that.
+  const recent = toMs - 730 * DAY;
+  for (const first of eachMonth(fromMs + 20 * DAY, toMs, 1)) {
+    const d = new Date(first);
+    const quarterly = first < recent;
+    if (quarterly && d.getUTCMonth() % 3 !== 0) continue;
+    const prev = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    add(randomTime(first + crypto.randomInt(1, 4) * DAY), `Your ${prev} statement${accounts.length > 1 ? 's are' : ' is'} ready`,
+      `Your ${prev} statement${accounts.length > 1 ? 's are' : ' is'} now available in Online Banking:\n${accounts.map((a) => `• ${ending(a)}`).join('\n')}\n\nOpen any account and choose “Statement” to download.`);
+  }
+  // Security reminders every 5–8 months.
+  for (let t = fromMs + crypto.randomInt(120, 200) * DAY; t <= toMs; t += crypto.randomInt(150, 240) * DAY) {
+    add(randomTime(t), pick(['Security reminder: protect your account', 'Watch out for phone scams', 'Tips to keep your account safe']),
+      'A quick reminder: CapitalBridge will never ask for your password, PIN or one-time passcode, and we’ll never ask you to move money to a “safe account.” If something feels off, hang up and call 1-800-555-0199.');
+  }
+  // A few conversations the customer started, answered by the bank within a day.
+  const days = Math.floor((toMs - fromMs) / DAY);
+  const count = Math.min(6, days < 60 ? (days > 7 ? 1 : 0) : crypto.randomInt(2, 5));
+  const qs = QUESTIONS.filter((q) => !q[3] || types.has(q[3])).sort(() => Math.random() - 0.5).slice(0, count);
+  for (const [subject, q, a] of qs) {
+    const asked = randomTime(fromMs + crypto.randomInt(3, Math.max(4, days - 1)) * DAY);
+    add(asked, subject, q, 0);
+    add(asked + crypto.randomInt(2, 22) * 3600 * 1000, `Re: ${subject}`, a);
+  }
+
+  msgs.sort((x, y) => x.time - y.time);
+  const recentCutoff = Date.now() - 3 * DAY;
+  const ins = db.prepare('INSERT INTO messages (user_id, from_admin, subject, body, is_read, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+  for (const m of msgs) ins.run(userId, m.fromAdmin, m.subject, m.body, m.fromAdmin && m.time > recentCutoff ? 0 : 1, at(m.time));
+  return msgs.length;
+}
+
+module.exports = { generateHistory, generateMessages };
