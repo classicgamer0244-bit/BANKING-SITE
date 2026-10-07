@@ -440,9 +440,12 @@
                     <div><div class="k">To</div><div class="v">${toLabel}</div></div>
                     <div><div class="k">Delivery</div><div class="v">${deliveryLabel}</div></div>
                     <div><div class="k">Timestamp</div><div class="v">${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div></div>
+                  <div style="display:flex;gap:10px;justify-content:center;margin-top:18px">
+                    <a href="#/activity" class="btn btn-gold" onclick="this.closest('.modal-backdrop').remove()">View activity</a>
+                    <button type="button" class="btn btn-ghost" onclick="this.closest('.modal-backdrop').remove();views.transfer()">Done</button>
                   </div>
                 </div>`,
-                onSubmit: () => { views.transfer(); },
+                onSubmit: null,
               });
             },
           });
