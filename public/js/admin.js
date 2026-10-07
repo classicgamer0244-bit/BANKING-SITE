@@ -27,19 +27,43 @@
     return Array.from(a, (n) => c[n % c.length]).join('');
   };
 
-  function txTable(list, { withCustomer, reversible = true } = {}) {
-    if (!list.length) return '<div class="empty">No transactions.</div>';
-    return `<div class="table-wrap"><table><thead><tr><th>Date</th>${withCustomer ? '<th>Customer</th>' : ''}<th>Account</th><th>Description</th><th>Category</th><th class="amt">Amount</th><th class="amt">Balance after</th><th></th></tr></thead><tbody>
-      ${list.map((t) => `<tr>
-        <td class="muted" style="white-space:nowrap">${dateTime(t.created_at)}</td>
+  // Compact transaction rows: date over time, category under the description, so the table fits without scrolling.
+  function txRows(list, { withCustomer, reversible = true } = {}) {
+    return list.map((t) => `<tr data-tx="${t.id}">
+        <td class="tx-date">${date(t.created_at)}<div class="small muted">${new Date(t.created_at.replace(' ', 'T') + 'Z').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div></td>
         ${withCustomer ? `<td><a href="#/customer/${t.user_id}">${esc(t.customer)}</a></td>` : ''}
-        <td class="muted" style="white-space:nowrap">••${esc(t.account_number.slice(-4))}<div class="small">${esc((TYPE_LABEL[t.account_type] || t.account_type).replace('Bridge ', ''))}</div></td>
-        <td>${esc(t.description)}<div class="small muted">${esc(t.reference)}</div></td>
-        <td><span class="badge">${esc(t.category)}</span> ${t.status === 'reversed' ? statusBadge('reversed') : ''}</td>
+        <td class="tx-acct">••${esc(t.account_number.slice(-4))}<div class="small muted">${esc((TYPE_LABEL[t.account_type] || t.account_type).replace('Bridge ', '').replace(' Account', ''))}</div></td>
+        <td class="tx-desc">${esc(t.description)} ${t.status === 'reversed' ? statusBadge('reversed') : ''}
+          <div class="small muted"><span class="tx-cat">${esc(t.category)}</span> · ${esc(t.reference)}</div></td>
         <td class="amt ${t.direction === 'in' ? 'up' : ''}" style="font-weight:600">${signed(t)}</td>
         <td class="amt muted">${money(t.balance_after)}</td>
-        <td class="amt">${reversible && t.status === 'posted' && t.category !== 'reversal' ? `<button class="link-btn small" data-reverse="${t.id}" data-ref="${esc(t.reference)}">Reverse</button>` : ''}</td>
-      </tr>`).join('')}</tbody></table></div>`;
+        ${reversible ? `<td class="amt">${t.status === 'posted' && t.category !== 'reversal' ? `<button class="link-btn small" data-reverse="${t.id}" data-ref="${esc(t.reference)}">Reverse</button>` : ''}</td>` : ''}
+      </tr>`).join('');
+  }
+  function txTable(list, opts = {}) {
+    if (!list.length) return '<div class="empty">No transactions.</div>';
+    const { withCustomer, reversible = true, more = false } = opts;
+    return `<div class="table-wrap"><table class="tx-table"><thead><tr><th>Date</th>${withCustomer ? '<th>Customer</th>' : ''}<th>Account</th><th>Description</th>
+        <th class="amt">Amount</th><th class="amt">Balance</th>${reversible ? '<th></th>' : ''}</tr></thead>
+      <tbody data-tx-body>${txRows(list, opts)}</tbody></table></div>
+      <div class="show-more" ${more ? '' : 'hidden'}><button type="button" class="btn btn-ghost btn-sm" data-tx-more>Show more</button></div>`;
+  }
+  // Wires the "Show more" button under a txTable: fetchPage(beforeId) must resolve to {transactions, more}.
+  function attachShowMore(root, fetchPage, opts, onLoaded) {
+    const btn = root.querySelector('[data-tx-more]');
+    if (!btn) return;
+    btn.onclick = async () => {
+      const body = root.querySelector('[data-tx-body]');
+      const before = Number(body.lastElementChild?.dataset.tx) || 0;
+      btn.disabled = true; btn.textContent = 'Loading…';
+      try {
+        const r = await fetchPage(before);
+        body.insertAdjacentHTML('beforeend', txRows(r.transactions, opts));
+        btn.closest('.show-more').hidden = !r.more;
+        if (onLoaded) onLoaded();
+      } catch (e) { toast(e.message, 'error'); }
+      btn.disabled = false; btn.textContent = 'Show more';
+    };
   }
   function bindReverse(after) {
     page.querySelectorAll('[data-reverse]').forEach((b) => b.onclick = () => modal({
@@ -230,7 +254,7 @@
     },
 
     async customer(id) {
-      const { user: u, accounts, transactions, messages } = await api('/api/admin/users/' + id);
+      const { user: u, accounts, transactions, tx_more, tx_total, messages } = await api('/api/admin/users/' + id);
       $('#pageTitle').textContent = `${u.first_name} ${u.last_name}`;
       const reload = () => views.customer(id);
       page.innerHTML = `
@@ -266,14 +290,17 @@
             </tbody></table></div>` : '<div class="empty">No accounts. Open one to get started.</div>'}
         </div>
 
-        <div class="two-col">
-          <div class="card"><div class="card-head"><h2>Transactions</h2></div>${txTable(transactions)}</div>
-          <div class="card"><div class="card-head"><h3>Message history</h3></div>
-            ${messages.map((m) => `<div class="msg open"><div style="display:flex;justify-content:space-between;gap:8px"><span class="subj">${esc(m.subject)}</span>
-              <span class="badge ${m.from_admin ? 'info' : 'warn'}">${m.from_admin ? 'Bank' : 'Customer'}</span></div><div class="small muted">${dateTime(m.created_at)}</div><div class="body">${esc(m.body)}</div></div>`).join('') || '<div class="empty">No messages.</div>'}
-          </div>
+        <div class="card" id="custTx" style="margin-bottom:22px"><div class="card-head"><h2>Transactions</h2><span class="small muted" data-tx-count></span></div>
+          ${txTable(transactions, { more: tx_more })}</div>
+        <div class="card"><div class="card-head"><h3>Message history</h3></div>
+          ${messages.map((m) => `<div class="msg open"><div style="display:flex;justify-content:space-between;gap:8px"><span class="subj">${esc(m.subject)}</span>
+            <span class="badge ${m.from_admin ? 'info' : 'warn'}">${m.from_admin ? 'Bank' : 'Customer'}</span></div><div class="small muted">${dateTime(m.created_at)}</div><div class="body">${esc(m.body)}</div></div>`).join('') || '<div class="empty">No messages.</div>'}
         </div>`;
 
+      const txCard = $('#custTx');
+      const countTx = () => { const shown = txCard.querySelectorAll('[data-tx]').length; txCard.querySelector('[data-tx-count]').textContent = shown ? `Showing ${shown.toLocaleString()} of ${tx_total.toLocaleString()}` : ''; };
+      countTx();
+      attachShowMore(txCard, (before) => api(`/api/admin/users/${id}/transactions?before=${before}`), {}, () => { countTx(); bindReverse(reload); });
       bindReverse(reload);
       const act = (name, fn) => { const b = page.querySelector(`[data-act="${name}"]`); if (b) b.onclick = fn; };
       act('edit', () => modal({
@@ -367,9 +394,11 @@
       page.innerHTML = `<div class="card"><div class="toolbar"><input type="search" id="q" placeholder="Search description, reference, account or customer"></div><div id="list" class="muted">Loading…</div></div>`;
       let timer;
       const load = async () => {
-        const { transactions } = await api('/api/admin/transactions?q=' + encodeURIComponent($('#q').value));
+        const q = encodeURIComponent($('#q').value);
+        const { transactions, more } = await api('/api/admin/transactions?q=' + q);
         $('#list').classList.remove('muted');
-        $('#list').innerHTML = txTable(transactions, { withCustomer: true });
+        $('#list').innerHTML = txTable(transactions, { withCustomer: true, more });
+        attachShowMore($('#list'), (before) => api(`/api/admin/transactions?q=${q}&before=${before}`), { withCustomer: true }, () => bindReverse(load));
         bindReverse(load);
       };
       $('#q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });

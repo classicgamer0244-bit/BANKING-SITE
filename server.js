@@ -303,9 +303,12 @@ app.get('/api/accounts', requireAuth, requireCustomer, (req, res) => {
 
 app.get('/api/accounts/:id/transactions', requireAuth, requireCustomer, wrap((req, res) => {
   const a = myAccount(req, req.params.id);
-  const limit = Math.min(Number(req.query.limit) || 100, 500);
-  const rows = db.prepare('SELECT * FROM transactions WHERE account_id = ? ORDER BY id DESC LIMIT ?').all(a.id, limit);
-  res.json({ account: acctView(a), transactions: rows.map(txView) });
+  const { before, limit } = pageArgs(req.query);
+  const q = `%${str(req.query.q, 60)}%`;
+  const rows = db.prepare(`SELECT * FROM transactions WHERE account_id = ? AND (? = 0 OR id < ?)
+                           AND (description LIKE ? OR reference LIKE ? OR category LIKE ?) ORDER BY id DESC LIMIT ?`)
+    .all(a.id, before, before, q, q, q, limit + 1);
+  res.json({ account: acctView(a), transactions: rows.slice(0, limit).map(txView), more: rows.length > limit });
 }));
 
 app.get('/api/activity', requireAuth, requireCustomer, (req, res) => {
@@ -548,10 +551,24 @@ function openAccount(userId, a, actorId) {
 admin.get('/users/:id', wrap((req, res) => {
   const u = getUser(req.params.id);
   const accounts = db.prepare('SELECT * FROM accounts WHERE user_id = ? ORDER BY id').all(u.id).map(acctView);
-  const transactions = db.prepare(`SELECT t.*, a.number, a.type FROM transactions t JOIN accounts a ON a.id=t.account_id
-                                   WHERE a.user_id = ? ORDER BY t.id DESC LIMIT 200`).all(u.id).map(txView);
+  const page = customerTxPage(u.id, 0, PAGE_SIZE);
   const messages = db.prepare('SELECT * FROM messages WHERE user_id = ? ORDER BY id DESC').all(u.id);
-  res.json({ user: publicUser(u), accounts, transactions, messages });
+  res.json({ user: publicUser(u), accounts, transactions: page.transactions, tx_more: page.more, tx_total: page.total, messages });
+}));
+
+// Transaction lists load a page at a time; "before" is the id of the last row already shown.
+const PAGE_SIZE = 25;
+const pageArgs = (q) => ({ before: Number(q.before) || 0, limit: Math.min(Math.max(Number(q.limit) || PAGE_SIZE, 1), 200) });
+function customerTxPage(userId, before, limit) {
+  const rows = db.prepare(`SELECT t.*, a.number, a.type FROM transactions t JOIN accounts a ON a.id = t.account_id
+                           WHERE a.user_id = ? AND (? = 0 OR t.id < ?) ORDER BY t.id DESC LIMIT ?`).all(userId, before, before, limit + 1);
+  const total = db.prepare('SELECT COUNT(*) n FROM transactions t JOIN accounts a ON a.id = t.account_id WHERE a.user_id = ?').get(userId).n;
+  return { transactions: rows.slice(0, limit).map(txView), more: rows.length > limit, total };
+}
+admin.get('/users/:id/transactions', wrap((req, res) => {
+  const u = getUser(req.params.id);
+  const { before, limit } = pageArgs(req.query);
+  res.json(customerTxPage(u.id, before, limit));
 }));
 
 admin.put('/users/:id', wrap((req, res) => {
@@ -646,11 +663,13 @@ admin.post('/transactions/:id/reverse', wrap((req, res) => {
 
 admin.get('/transactions', (req, res) => {
   const q = `%${str(req.query.q, 60)}%`;
+  const { before, limit } = pageArgs(req.query);
   const rows = db.prepare(`SELECT t.*, a.number, a.type, a.user_id, u.first_name, u.last_name FROM transactions t
       JOIN accounts a ON a.id = t.account_id JOIN users u ON u.id = a.user_id
-      WHERE t.description LIKE ? OR t.reference LIKE ? OR a.number LIKE ? OR (u.first_name || ' ' || u.last_name) LIKE ?
-      ORDER BY t.id DESC LIMIT 300`).all(q, q, q, q);
-  res.json({ transactions: rows.map(txView) });
+      WHERE (? = 0 OR t.id < ?)
+        AND (t.description LIKE ? OR t.reference LIKE ? OR a.number LIKE ? OR (u.first_name || ' ' || u.last_name) LIKE ?)
+      ORDER BY t.id DESC LIMIT ?`).all(before, before, q, q, q, q, limit + 1);
+  res.json({ transactions: rows.slice(0, limit).map(txView), more: rows.length > limit });
 });
 
 admin.post('/users/:id/messages', wrap((req, res) => {

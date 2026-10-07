@@ -109,6 +109,15 @@ tr:last-child td { border-bottom: 0; }
 td.amt, th.amt { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tbody tr.clickable { cursor: pointer; }
 tbody tr.clickable:hover { background: var(--bg); }
+.tx-table td { padding: 10px 10px; }
+.tx-table th { padding: 10px 10px; }
+.tx-date { white-space: nowrap; color: var(--ink-2); font-size: 13.5px; }
+.tx-acct { white-space: nowrap; color: var(--ink-2); font-size: 13.5px; }
+.tx-desc { min-width: 180px; }
+.tx-cat { text-transform: capitalize; }
+.show-more { text-align: center; padding: 14px 0 2px; }
+.show-more[hidden] { display: none; }
+.show-more .btn { min-width: 160px; }
 .empty { text-align: center; color: var(--ink-3); padding: 30px 10px; }
 
 /* ---------- logo ---------- */

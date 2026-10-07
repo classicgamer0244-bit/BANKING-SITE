@@ -19,17 +19,22 @@
   const debitable = () => accounts.filter((a) => ['checking', 'savings', 'money_market', 'credit_card'].includes(a.type) && a.status === 'active');
   const acctOpt = (a) => `<option value="${a.id}">${esc(acctName(a))} ${a.masked} — ${a.is_credit ? 'owed ' : ''}${money(a.balance)}</option>`;
 
-  function txTable(list, showAcct) {
-    if (!list.length) return '<div class="empty">No transactions yet.</div>';
-    return `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th>${showAcct ? '<th>Account</th>' : ''}<th>Category</th><th class="amt">Amount</th>${showAcct ? '' : '<th class="amt">Balance</th>'}</tr></thead><tbody>
-      ${list.map((t) => `<tr>
-        <td class="muted" style="white-space:nowrap">${date(t.created_at)}</td>
-        <td>${esc(t.description)} ${t.status === 'reversed' ? '<span class="badge bad">Reversed</span>' : ''}<div class="small muted">Ref ${esc(t.reference)}</div></td>
-        ${showAcct ? `<td class="muted">••${esc(t.account_number.slice(-4))}</td>` : ''}
-        <td><span class="badge">${esc(t.category.replace('_', ' '))}</span></td>
+  // Category sits under the description so the table fits without sideways scrolling.
+  function txRows(list, showAcct) {
+    return list.map((t) => `<tr data-tx="${t.id}">
+        <td class="tx-date">${date(t.created_at)}</td>
+        <td class="tx-desc">${esc(t.description)} ${t.status === 'reversed' ? '<span class="badge bad">Reversed</span>' : ''}
+          <div class="small muted"><span class="tx-cat">${esc(t.category.replace('_', ' '))}</span> · Ref ${esc(t.reference)}</div></td>
+        ${showAcct ? `<td class="tx-acct">••${esc(t.account_number.slice(-4))}</td>` : ''}
         <td class="amt ${t.direction === 'in' ? 'up' : ''}" style="font-weight:600">${signed(t)}</td>
         ${showAcct ? '' : `<td class="amt muted">${money(t.balance_after)}</td>`}
-      </tr>`).join('')}</tbody></table></div>`;
+      </tr>`).join('');
+  }
+  function txTable(list, showAcct, more = false) {
+    if (!list.length) return '<div class="empty">No transactions found.</div>';
+    return `<div class="table-wrap"><table class="tx-table"><thead><tr><th>Date</th><th>Description</th>${showAcct ? '<th>Account</th>' : ''}<th class="amt">Amount</th>${showAcct ? '' : '<th class="amt">Balance</th>'}</tr></thead>
+      <tbody data-tx-body>${txRows(list, showAcct)}</tbody></table></div>
+      <div class="show-more" ${more ? '' : 'hidden'}><button type="button" class="btn btn-ghost btn-sm" data-tx-more>Show more</button></div>`;
   }
 
   async function refreshAccounts() { accounts = (await api('/api/accounts')).accounts; }
@@ -96,7 +101,7 @@
         bindAcctTiles();
         return;
       }
-      const { account: a, transactions } = await api(`/api/accounts/${id}/transactions?limit=500`);
+      const { account: a, transactions, more } = await api(`/api/accounts/${id}/transactions`);
       $('#pageTitle').textContent = acctName(a);
       page.innerHTML = `
         <a href="#/accounts" class="small">← All accounts</a>
@@ -109,10 +114,34 @@
         <div class="card"><div class="card-head"><h2>Transactions</h2>
           <div class="actions"><input type="search" id="txSearch" placeholder="Search transactions" style="width:220px;padding:7px 12px">
           <a class="btn btn-sm btn-ghost" href="/api/accounts/${a.id}/statement.csv">${icon('download', 16)} Statement (CSV)</a></div></div>
-          <div id="txBox">${txTable(transactions)}</div></div>`;
+          <div id="txBox">${txTable(transactions, false, more)}</div></div>`;
+
+      // "Show more" pages through older transactions; search runs on the server across the whole history.
+      const box = $('#txBox');
+      const wireMore = (q) => {
+        const btn = box.querySelector('[data-tx-more]');
+        if (!btn) return;
+        btn.onclick = async () => {
+          const before = Number(box.querySelector('[data-tx-body]').lastElementChild?.dataset.tx) || 0;
+          btn.disabled = true; btn.textContent = 'Loading…';
+          try {
+            const r = await api(`/api/accounts/${a.id}/transactions?before=${before}&q=${encodeURIComponent(q)}`);
+            box.querySelector('[data-tx-body]').insertAdjacentHTML('beforeend', txRows(r.transactions));
+            btn.closest('.show-more').hidden = !r.more;
+          } catch (e) { toast(e.message, 'error'); }
+          btn.disabled = false; btn.textContent = 'Show more';
+        };
+      };
+      wireMore('');
+      let timer;
       $('#txSearch').addEventListener('input', (e) => {
-        const q = e.target.value.toLowerCase();
-        $('#txBox').innerHTML = txTable(transactions.filter((t) => (t.description + t.reference + t.category).toLowerCase().includes(q)));
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+          const q = e.target.value.trim();
+          const r = await api(`/api/accounts/${a.id}/transactions?q=${encodeURIComponent(q)}`);
+          box.innerHTML = txTable(r.transactions, false, r.more);
+          wireMore(q);
+        }, 250);
       });
     },
 
