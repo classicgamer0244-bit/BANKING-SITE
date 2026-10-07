@@ -24,7 +24,7 @@
     return list.map((t) => `<tr data-tx="${t.id}">
         <td class="tx-date">${date(t.created_at)}</td>
         <td class="tx-desc">${esc(t.description)} ${t.status === 'reversed' ? '<span class="badge bad">Reversed</span>' : ''}
-          <div class="small muted"><span class="tx-cat">${esc(t.category.replace('_', ' '))}</span> · Ref ${esc(t.reference)}</div></td>
+          <div class="small muted"><span class="tx-cat">${esc(t.category.replace('_', ' '))}</span>${showAcct ? `<span class="tx-acct-inline"> · ••${esc(t.account_number.slice(-4))}</span>` : ''}<span class="tx-ref"> · Ref ${esc(t.reference)}</span></div></td>
         ${showAcct ? `<td class="tx-acct">••${esc(t.account_number.slice(-4))}</td>` : ''}
         <td class="amt ${t.direction === 'in' ? 'up' : ''}" style="font-weight:600">${signed(t)}</td>
         ${showAcct ? '' : `<td class="amt muted">${money(t.balance_after)}</td>`}
@@ -32,7 +32,7 @@
   }
   function txTable(list, showAcct, more = false) {
     if (!list.length) return '<div class="empty">No transactions found.</div>';
-    return `<div class="table-wrap"><table class="tx-table"><thead><tr><th>Date</th><th>Description</th>${showAcct ? '<th>Account</th>' : ''}<th class="amt">Amount</th>${showAcct ? '' : '<th class="amt">Balance</th>'}</tr></thead>
+    return `<div class="table-wrap"><table class="tx-table"><thead><tr><th>Date</th><th>Description</th>${showAcct ? '<th class="tx-acct">Account</th>' : ''}<th class="amt">Amount</th>${showAcct ? '' : '<th class="amt">Balance</th>'}</tr></thead>
       <tbody data-tx-body>${txRows(list, showAcct)}</tbody></table></div>
       <div class="show-more" ${more ? '' : 'hidden'}><button type="button" class="btn btn-ghost btn-sm" data-tx-more>Show more</button></div>`;
   }
@@ -406,6 +406,29 @@
     $('#avatar').textContent = (me.first_name[0] || '') + (me.last_name[0] || '');
     $('#hamb').innerHTML = icon('menu', 24);
     $('#hamb').onclick = () => $('#sidebar').classList.toggle('open');
+    // Floating "Back to top": shows once you've scrolled down a long list.
+    const toTop = $('#toTop');
+    const syncToTop = () => {
+      const top = window.scrollY || document.documentElement.scrollTop || 0;
+      toTop.hidden = top < 300;
+    };
+    window.addEventListener('scroll', syncToTop, { passive: true });
+    document.addEventListener('scroll', syncToTop, { passive: true });
+    window.addEventListener('hashchange', () => setTimeout(syncToTop, 50));
+    syncToTop();
+    toTop.onclick = () => {
+      const start = window.scrollY || document.documentElement.scrollTop || 0;
+      try {
+        window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      } catch {
+        window.scrollTo(0, 0);
+      }
+      // Some browsers/webviews ignore smooth scrolling; if nothing moved, jump straight up.
+      setTimeout(() => {
+        const cur = window.scrollY || document.documentElement.scrollTop || 0;
+        if (cur >= start && cur > 0) window.scrollTo(0, 0);
+      }, 250);
+    };
     await refreshUnread().catch(() => {});
     window.addEventListener('hashchange', route);
     route();
