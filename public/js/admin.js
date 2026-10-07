@@ -1,0 +1,546 @@
+(() => {
+  const { api, money, esc, icon, date, dateTime, toast, modal, formData, acctName, TYPE_LABEL, typeIcon, num } = CB;
+  const $ = (s) => document.querySelector(s);
+  const page = $('#page');
+  let me = null, stats = null, careTimer = null;
+
+  const NAV = [
+    ['dashboard', 'home', 'Dashboard'], ['customers', 'users', 'Customers'], ['transactions', 'list', 'Transactions'],
+    ['care', 'users', 'Customer care chat'], ['requests', 'bill', 'Requests'], ['inbox', 'mail', 'Secure messages'], ['announcements', 'news', 'Announcements'], ['audit', 'shield', 'Audit log'], ['settings', 'user', 'My settings'],
+  ];
+  const TYPES = Object.keys(TYPE_LABEL);
+  const CATEGORIES = ['deposit', 'withdrawal', 'payroll', 'interest', 'fee', 'refund', 'adjustment', 'payment', 'purchase', 'groceries', 'dining', 'travel', 'shopping', 'utilities', 'loan', 'other'];
+
+  function renderNav(active) {
+    $('#sideNav').innerHTML = NAV.map(([k, i, l]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}">${icon(i)}${l}
+      ${k === 'inbox' && stats?.unread ? `<span class="count">${stats.unread}</span>` : ''}
+      ${k === 'requests' && stats?.newRequests ? `<span class="count">${stats.newRequests}</span>` : ''}
+      ${k === 'care' && stats?.chatsWaiting ? `<span class="count">${stats.chatsWaiting}</span>` : ''}</a>`).join('');
+  }
+  const statusBadge = (s) => `<span class="badge ${s === 'active' || s === 'posted' ? 'good' : s === 'frozen' || s === 'suspended' ? 'warn' : 'bad'}">${esc(s)}</span>`;
+  const signed = (t) => (t.direction === 'in' ? '+' : '−') + money(t.amount);
+  const genPassword = () => {
+    const c = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    const a = crypto.getRandomValues(new Uint32Array(12));
+    return Array.from(a, (n) => c[n % c.length]).join('');
+  };
+
+  function txTable(list, { withCustomer, reversible = true } = {}) {
+    if (!list.length) return '<div class="empty">No transactions.</div>';
+    return `<div class="table-wrap"><table><thead><tr><th>Date</th>${withCustomer ? '<th>Customer</th>' : ''}<th>Account</th><th>Description</th><th>Category</th><th class="amt">Amount</th><th class="amt">Balance after</th><th></th></tr></thead><tbody>
+      ${list.map((t) => `<tr>
+        <td class="muted" style="white-space:nowrap">${dateTime(t.created_at)}</td>
+        ${withCustomer ? `<td><a href="#/customer/${t.user_id}">${esc(t.customer)}</a></td>` : ''}
+        <td class="muted" style="white-space:nowrap">••${esc(t.account_number.slice(-4))}<div class="small">${esc((TYPE_LABEL[t.account_type] || t.account_type).replace('Advantage ', ''))}</div></td>
+        <td>${esc(t.description)}<div class="small muted">${esc(t.reference)}</div></td>
+        <td><span class="badge">${esc(t.category)}</span> ${t.status === 'reversed' ? statusBadge('reversed') : ''}</td>
+        <td class="amt ${t.direction === 'in' ? 'up' : ''}" style="font-weight:600">${signed(t)}</td>
+        <td class="amt muted">${money(t.balance_after)}</td>
+        <td class="amt">${reversible && t.status === 'posted' && t.category !== 'reversal' ? `<button class="link-btn small" data-reverse="${t.id}" data-ref="${esc(t.reference)}">Reverse</button>` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }
+  function bindReverse(after) {
+    page.querySelectorAll('[data-reverse]').forEach((b) => b.onclick = () => modal({
+      title: 'Reverse transaction', submitText: 'Reverse', danger: true,
+      body: `<p>Post an offsetting entry for <b>${esc(b.dataset.ref)}</b>? The original is marked reversed. This can overdraw the account if the funds were already used.</p>`,
+      onSubmit: async () => { await api(`/api/admin/transactions/${b.dataset.reverse}/reverse`, { method: 'POST' }); toast('Transaction reversed', 'success'); after(); },
+    }));
+  }
+
+  // ---------- account opening fields (reused) ----------
+  const accountFields = (prefix = '') => `
+    <div class="grid-2">
+      <div class="field"><label>Account type</label><select name="${prefix}type" data-acct-type>${TYPES.map((t) => `<option value="${t}">${TYPE_LABEL[t]}</option>`).join('')}</select></div>
+      <div class="field"><label>Nickname (optional)</label><input name="${prefix}nickname" maxlength="40"></div>
+    </div>
+    <div class="grid-3">
+      <div class="field"><label data-open-label>Opening deposit ($)</label><input name="${prefix}opening" type="number" step="0.01" min="0" value="0"></div>
+      <div class="field"><label data-rate-label>APY (%)</label><input name="${prefix}rate" type="number" step="0.01" min="0" value="0.01"></div>
+      <div class="field" data-limit style="display:none"><label>Credit limit ($)</label><input name="${prefix}credit_limit" type="number" step="0.01" min="0" value="5000"></div>
+    </div>`;
+  const RATE_DEFAULT = { checking: 0.01, savings: 4.35, money_market: 4.5, cd: 4.75, credit_card: 21.99, loan: 9.49, investment: 0 };
+  function wireAccountFields(root) {
+    const sel = root.querySelector('[data-acct-type]');
+    const upd = () => {
+      const t = sel.value, credit = t === 'credit_card' || t === 'loan';
+      root.querySelector('[data-limit]').style.display = t === 'credit_card' ? '' : 'none';
+      root.querySelector('[data-rate-label]').textContent = credit ? 'APR (%)' : 'APY (%)';
+      root.querySelector('[data-open-label]').textContent = t === 'loan' ? 'Loan principal ($)' : t === 'credit_card' ? 'Opening balance owed ($)' : 'Opening deposit ($)';
+      root.querySelector('[name$="rate"]').value = RATE_DEFAULT[t];
+    };
+    sel.onchange = upd; upd();
+  }
+
+  function createCustomer(prefill = {}, onCreated) {
+    const m = modal({
+      title: 'Create customer', wide: true, submitText: 'Create customer',
+      body: `
+        <h4 style="margin-bottom:12px">Personal information</h4>
+        <div class="grid-2"><div class="field"><label>First name *</label><input name="first_name" required></div><div class="field"><label>Last name *</label><input name="last_name" required></div></div>
+        <div class="grid-3"><div class="field"><label>Email</label><input name="email" type="email"></div><div class="field"><label>Phone</label><input name="phone"></div><div class="field"><label>Date of birth</label><input name="dob" type="date"></div></div>
+        <div class="field"><label>Street address</label><input name="address"></div>
+        <div class="grid-3"><div class="field"><label>City</label><input name="city"></div><div class="field"><label>State</label><input name="state"></div><div class="field"><label>ZIP</label><input name="zip"></div></div>
+        <div class="grid-3"><div class="field"><label>SSN (last 4 only)</label><input name="ssn_last4" maxlength="4" inputmode="numeric"></div></div>
+        <h4 style="margin:10px 0 12px">Online banking login</h4>
+        <div class="grid-2"><div class="field"><label>User ID *</label><input name="username" required minlength="4" autocomplete="off"></div>
+          <div class="field"><label>Temporary password *</label><div style="display:flex;gap:6px"><input name="password" required minlength="8" autocomplete="new-password" value="${genPassword()}"><button type="button" class="btn btn-ghost btn-sm" data-gen>New</button></div></div></div>
+        <label class="check small" style="margin-bottom:16px"><input type="checkbox" name="must_change_pw" checked> Require password change at first sign-in</label>
+        <h4 style="margin:10px 0 12px">Open first account <span class="small muted">(optional)</span></h4>
+        <label class="check small" style="margin-bottom:12px"><input type="checkbox" name="with_account" checked> Open an account now</label>
+        <div data-acct-box>${accountFields('a_')}</div>`,
+      onSubmit: async (f) => {
+        const d = formData(f);
+        const body = { ...d, must_change_pw: !!d.must_change_pw, accounts: d.with_account ? [{ type: d.a_type, nickname: d.a_nickname, opening: d.a_opening, rate: d.a_rate, credit_limit: d.a_credit_limit }] : [] };
+        const r = await api('/api/admin/users', { body });
+        toast(`Customer ${d.first_name} ${d.last_name} created`, 'success');
+        if (onCreated) await onCreated(r.id);
+        location.hash = '#/customer/' + r.id;
+      },
+    });
+    for (const [k, v] of Object.entries(prefill)) if (m.el[k] && v != null) m.el[k].value = v;
+    wireAccountFields(m.el);
+    m.el.querySelector('[data-gen]').onclick = () => (m.el.password.value = genPassword());
+    m.el.with_account.onchange = (e) => (m.el.querySelector('[data-acct-box]').style.display = e.target.checked ? '' : 'none');
+  }
+
+  // ---------- website requests ----------
+  const rqBadge = (s) => `<span class="badge ${s === 'new' ? 'warn' : s === 'closed' ? 'good' : 'info'}">${esc(s.replace('_', ' '))}</span>`;
+  const PRODUCT_LABEL = { checking: 'Advantage Checking', savings: 'Advantage Savings', money_market: 'Money Market', cd: 'CD', credit_card: 'Rewards Credit Card', mortgage: 'Mortgage / Refinance', auto_loan: 'Auto loan', personal_loan: 'Personal loan', investment: 'Bridge Invest / IRA' };
+  const PRODUCT_TO_TYPE = { checking: 'checking', savings: 'savings', money_market: 'money_market', cd: 'cd', credit_card: 'credit_card', mortgage: 'loan', auto_loan: 'loan', personal_loan: 'loan', investment: 'investment' };
+  function summary(r) {
+    const d = r.data;
+    switch (r.kind) {
+      case 'application': return `${PRODUCT_LABEL[d.product] || d.product}${d.amount ? ' · $' + d.amount : ''}${d.city ? ' · ' + d.city + ', ' + d.state : ''}`;
+      case 'appointment': return `${d.topic || ''} · ${d.date || ''} ${d.time || ''} · ${d.branch || ''}`;
+      case 'password_reset': return `${d.issue || ''}${d.username ? ' · User ID ' + d.username : ''}`;
+      case 'fraud': return `${d.fraud_type || ''}${d.amount ? ' · $' + d.amount : ''}`;
+      case 'lost_card': return `${d.status || ''} ${d.card_type || ''}${d.card_last4 ? ' ••' + d.card_last4 : ''}`;
+      default: return `${d.topic || ''}${d.subject ? ' · ' + d.subject : ''}`;
+    }
+  }
+  const LABELS = { product: 'Product', amount: 'Amount', funding: 'Funding', dob: 'Date of birth', citizenship: 'Citizenship', address: 'Address', city: 'City', state: 'State', zip: 'ZIP', employment: 'Employment', income: 'Annual income', consent: 'Consent', contact_method: 'Preferred contact', topic: 'Topic', subject: 'Subject', message: 'Message', branch: 'Location', date: 'Date', time: 'Time', notes: 'Notes', issue: 'Issue', username: 'User ID', fraud_type: 'Type', status: 'Card status', card_type: 'Card type', card_last4: 'Card last 4', ship_to: 'Ship replacement to' };
+
+  function openRequest(r, reload) {
+    const d = r.data;
+    const rows = [['Name', r.name], ['Email', r.email], ['Phone', r.phone], ...Object.entries(d).filter(([, v]) => v).map(([k, v]) => [LABELS[k] || k, k === 'product' ? PRODUCT_LABEL[v] || v : v])];
+    const m = modal({
+      title: `${r.label} · ${r.reference}`, wide: true, submitText: 'Save',
+      body: `<div class="small muted" style="margin-bottom:14px">Received ${dateTime(r.created_at)} · ${rqBadge(r.status)}</div>
+        <table class="data-table"><tbody>${rows.map(([k, v]) => `<tr><td style="width:180px">${esc(k)}</td><td style="white-space:pre-wrap">${esc(v)}</td></tr>`).join('')}</tbody></table>
+        <div class="grid-2" style="margin-top:18px"><div class="field"><label>Status</label><select name="status">${['new', 'in_progress', 'closed'].map((s) => `<option value="${s}" ${s === r.status ? 'selected' : ''}>${s.replace('_', ' ')}</option>`).join('')}</select></div></div>
+        <div class="field"><label>Internal notes</label><textarea name="notes" placeholder="Visible to admins only">${esc(r.notes)}</textarea></div>
+        <div class="actions" data-rq-actions></div>`,
+      onSubmit: async (f) => { await api('/api/admin/requests/' + r.id, { body: formData(f) }); toast('Request updated', 'success'); reload(); },
+    });
+    const box = m.el.querySelector('[data-rq-actions]');
+    const [first, ...rest] = r.name.trim().split(/\s+/);
+    if (r.kind === 'application' && r.status !== 'closed') {
+      box.innerHTML = '<button type="button" class="btn btn-gold btn-sm" data-approve>Approve &amp; create customer</button>';
+      box.querySelector('[data-approve]').onclick = () => {
+        m.close();
+        const type = PRODUCT_TO_TYPE[d.product] || 'checking';
+        const base = (first + (rest.at(-1) || '')).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 14) || 'customer';
+        createCustomer({
+          first_name: first, last_name: rest.join(' '), email: r.email, phone: r.phone, dob: d.dob, address: d.address, city: d.city, state: d.state, zip: d.zip,
+          username: base + Math.floor(100 + Math.random() * 900), a_type: type, a_opening: type === 'credit_card' ? 0 : (d.amount || 0),
+          a_nickname: ['mortgage', 'auto_loan', 'personal_loan'].includes(d.product) ? PRODUCT_LABEL[d.product] : '',
+        }, (id) => api('/api/admin/requests/' + r.id, { body: { status: 'closed', notes: `${r.notes ? r.notes + '\n' : ''}Approved: customer #${id} created.` } }));
+      };
+    }
+    if (['password_reset', 'lost_card', 'fraud'].includes(r.kind) && (d.username || r.email)) {
+      box.insertAdjacentHTML('beforeend', `<button type="button" class="btn btn-ghost btn-sm" data-find>Find matching customer</button>`);
+      box.querySelector('[data-find]').onclick = async () => {
+        const { users } = await api('/api/admin/users?q=' + encodeURIComponent(d.username || r.email));
+        if (!users.length) return toast('No customer matches this User ID or email', 'error');
+        m.close(); location.hash = '#/customer/' + users[0].id;
+      };
+    }
+  }
+
+  // ---------- views ----------
+  const views = {
+    async dashboard() {
+      const [s, { transactions }, { messages }] = await Promise.all([api('/api/admin/stats'), api('/api/admin/transactions'), api('/api/admin/inbox')]);
+      stats = s; renderNav('dashboard');
+      const maxType = Math.max(1, ...s.byType.map((t) => Math.abs(t.total)));
+      page.innerHTML = `
+        <div class="kpis">
+          <div class="kpi dark"><div class="l">Total deposits held</div><div class="v num">${money(s.deposits)}</div><div class="s">Checking, savings, CDs & investment</div></div>
+          <div class="kpi"><div class="l">Credit & loans outstanding</div><div class="v num">${money(s.credit)}</div><div class="s">Cards and loans</div></div>
+          <div class="kpi"><div class="l">Customers</div><div class="v num">${s.customers}</div><div class="s">${s.activeCustomers} active · ${s.accounts} open accounts</div></div>
+          <div class="kpi"><div class="l">Transactions today</div><div class="v num">${s.txToday}</div><div class="s"><a href="#/care">${s.chatsWaiting} chats waiting</a> · <a href="#/requests">${s.newRequests} new requests</a></div></div>
+        </div>
+        <div class="two-col">
+          <div class="card"><div class="card-head"><h2>Latest transactions</h2><a href="#/transactions">View all</a></div>${txTable(transactions.slice(0, 10), { withCustomer: true, reversible: false })}</div>
+          <div class="stack">
+            <div class="card"><div class="card-head"><h3>Balances by product</h3></div>
+              ${s.byType.length ? `<div class="bars">${s.byType.map((t) => `<div class="bar-row" title="${t.n} accounts"><span>${esc(TYPE_LABEL[t.type] || t.type).replace('Advantage ', '')}</span>
+                <div class="bar-track"><div class="bar-fill" style="width:${Math.max(3, (Math.abs(t.total) / maxType) * 100)}%"></div></div><span class="num" style="text-align:right">${money(t.total)}</span></div>`).join('')}</div>` : '<div class="empty">No accounts yet.</div>'}
+            </div>
+            <div class="card"><div class="card-head"><h3>Customer messages</h3><a href="#/inbox">Inbox</a></div>
+              ${messages.slice(0, 5).map((m) => `<div class="msg ${m.is_read ? '' : 'unread'}" onclick="location.hash='#/customer/${m.user_id}'"><div class="subj">${esc(m.subject)}</div><div class="small muted">${esc(m.first_name)} ${esc(m.last_name)} · ${dateTime(m.created_at)}</div></div>`).join('') || '<div class="empty">No messages.</div>'}
+            </div>
+          </div>
+        </div>`;
+    },
+
+    async customers() {
+      page.innerHTML = `<div class="card"><div class="toolbar"><input type="search" id="q" placeholder="Search name, user ID, email or account number"><button class="btn btn-sm btn-gold" id="newCust">+ New customer</button></div><div id="list" class="muted">Loading…</div></div>`;
+      $('#newCust').onclick = () => createCustomer();
+      let timer;
+      const load = async () => {
+        const { users } = await api('/api/admin/users?q=' + encodeURIComponent($('#q').value));
+        $('#list').classList.remove('muted');
+        $('#list').innerHTML = users.length ? `<div class="table-wrap"><table><thead><tr><th>Customer</th><th>User ID</th><th>Contact</th><th>Accounts</th><th class="amt">Net position</th><th>Status</th><th>Since</th></tr></thead><tbody>
+          ${users.map((u) => `<tr class="clickable" data-id="${u.id}"><td><b>${esc(u.first_name)} ${esc(u.last_name)}</b></td><td>${esc(u.username)}</td>
+            <td class="small">${esc(u.email || '—')}<div class="muted">${esc(u.phone)}</div></td><td>${u.account_count}</td>
+            <td class="amt">${money(u.net)}</td><td>${statusBadge(u.status)}</td><td class="muted small">${date(u.created_at)}</td></tr>`).join('')}</tbody></table></div>`
+          : '<div class="empty">No customers found. Create your first customer to get started.</div>';
+        $('#list').querySelectorAll('[data-id]').forEach((r) => r.onclick = () => (location.hash = '#/customer/' + r.dataset.id));
+      };
+      $('#q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
+      load();
+    },
+
+    async customer(id) {
+      const { user: u, accounts, transactions, messages } = await api('/api/admin/users/' + id);
+      $('#pageTitle').textContent = `${u.first_name} ${u.last_name}`;
+      const reload = () => views.customer(id);
+      page.innerHTML = `
+        <a href="#/customers" class="small">← All customers</a>
+        <div class="card" style="margin:12px 0 22px">
+          <div class="card-head" style="flex-wrap:wrap">
+            <div style="display:flex;gap:14px;align-items:center"><div class="avatar" style="width:52px;height:52px;font-size:18px">${esc(u.first_name[0] || '')}${esc(u.last_name[0] || '')}</div>
+              <div><h2 style="font-size:22px">${esc(u.first_name)} ${esc(u.last_name)} ${statusBadge(u.status)}</h2><div class="small muted">User ID ${esc(u.username)} · Customer #${u.id} · Last sign-in ${u.last_login ? dateTime(u.last_login) : 'never'}</div></div></div>
+            <div class="actions">
+              <button class="btn btn-sm btn-ghost" data-act="edit">Edit profile</button>
+              <button class="btn btn-sm btn-ghost" data-act="reset">Reset password</button>
+              <button class="btn btn-sm btn-ghost" data-act="message">Send message</button>
+              <button class="btn btn-sm ${u.status === 'active' ? 'btn-ghost' : ''}" data-act="status">${u.status === 'active' ? 'Suspend access' : 'Reactivate'}</button>
+              <button class="btn btn-sm btn-danger" data-act="delete">Delete</button>
+            </div>
+          </div>
+          <div class="detail-grid">
+            ${[['Email', u.email], ['Phone', u.phone], ['Date of birth', u.dob], ['Address', [u.address, u.city, u.state, u.zip].filter(Boolean).join(', ')], ['SSN', u.ssn_last4 ? '•••-••-' + u.ssn_last4 : ''], ['Customer since', date(u.created_at)]]
+              .map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${esc(v || '—')}</div></div>`).join('')}
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:22px">
+          <div class="card-head"><h2>Accounts</h2><button class="btn btn-sm btn-gold" data-act="open">+ Open account</button></div>
+          ${accounts.length ? `<div class="table-wrap"><table><thead><tr><th>Account</th><th>Number</th><th class="amt">Balance</th><th class="amt">Rate</th><th>Status</th><th>Card</th><th class="amt">Actions</th></tr></thead><tbody>
+            ${accounts.map((a) => `<tr><td><div style="display:flex;gap:10px;align-items:center">${icon(typeIcon(a.type), 18)}<div><b>${esc(acctName(a))}</b><div class="small muted">${esc(TYPE_LABEL[a.type])}</div></div></div></td>
+              <td class="num">${esc(a.number)}</td>
+              <td class="amt" style="font-weight:700">${money(a.balance)}${a.is_credit ? '<div class="small muted">owed' + (a.type === 'credit_card' ? ' / ' + money(a.credit_limit) : '') + '</div>' : ''}</td>
+              <td class="amt">${num(a.rate, 2)}% <span class="small muted">${a.is_credit ? 'APR' : 'APY'}</span></td>
+              <td>${statusBadge(a.status)}</td>
+              <td class="small">${a.card_last4 ? `••${esc(a.card_last4)} ${a.card_locked ? '<span class="badge warn">locked</span>' : ''}` : '—'}</td>
+              <td class="amt"><div class="acct-row-actions">${a.status !== 'closed' ? `<button class="btn btn-sm" data-post="${a.id}">Credit / Debit</button>` : ''}<button class="btn btn-sm btn-ghost" data-edit-acct="${a.id}">Manage</button></div></td></tr>`).join('')}
+            </tbody></table></div>` : '<div class="empty">No accounts. Open one to get started.</div>'}
+        </div>
+
+        <div class="two-col">
+          <div class="card"><div class="card-head"><h2>Transactions</h2></div>${txTable(transactions)}</div>
+          <div class="card"><div class="card-head"><h3>Message history</h3></div>
+            ${messages.map((m) => `<div class="msg open"><div style="display:flex;justify-content:space-between;gap:8px"><span class="subj">${esc(m.subject)}</span>
+              <span class="badge ${m.from_admin ? 'info' : 'warn'}">${m.from_admin ? 'Bank' : 'Customer'}</span></div><div class="small muted">${dateTime(m.created_at)}</div><div class="body">${esc(m.body)}</div></div>`).join('') || '<div class="empty">No messages.</div>'}
+          </div>
+        </div>`;
+
+      bindReverse(reload);
+      const act = (name, fn) => { const b = page.querySelector(`[data-act="${name}"]`); if (b) b.onclick = fn; };
+      act('edit', () => modal({
+        title: 'Edit customer profile', wide: true,
+        body: `<div class="grid-2"><div class="field"><label>First name</label><input name="first_name" value="${esc(u.first_name)}" required></div><div class="field"><label>Last name</label><input name="last_name" value="${esc(u.last_name)}" required></div></div>
+          <div class="grid-3"><div class="field"><label>Email</label><input name="email" value="${esc(u.email)}"></div><div class="field"><label>Phone</label><input name="phone" value="${esc(u.phone)}"></div><div class="field"><label>Date of birth</label><input type="date" name="dob" value="${esc(u.dob)}"></div></div>
+          <div class="field"><label>Street address</label><input name="address" value="${esc(u.address)}"></div>
+          <div class="grid-3"><div class="field"><label>City</label><input name="city" value="${esc(u.city)}"></div><div class="field"><label>State</label><input name="state" value="${esc(u.state)}"></div><div class="field"><label>ZIP</label><input name="zip" value="${esc(u.zip)}"></div></div>
+          <div class="grid-3"><div class="field"><label>SSN last 4</label><input name="ssn_last4" maxlength="4" value="${esc(u.ssn_last4)}"></div></div>`,
+        onSubmit: async (f) => { await api('/api/admin/users/' + id, { method: 'PUT', body: formData(f) }); toast('Profile saved', 'success'); reload(); },
+      }));
+      act('reset', () => {
+        const m = modal({
+          title: 'Reset password', submitText: 'Reset password',
+          body: `<p class="muted">The customer will be signed out and must choose a new password at next sign-in. Share the temporary password through a secure channel.</p>
+            <div class="field"><label>Temporary password</label><input name="password" minlength="8" required value="${genPassword()}"></div>`,
+          onSubmit: async (f) => { await api(`/api/admin/users/${id}/reset-password`, { body: formData(f) }); toast('Password reset', 'success'); },
+        });
+        m.el.password.select();
+      });
+      act('message', () => modal({
+        title: `Message ${u.first_name}`, submitText: 'Send',
+        body: `<div class="field"><label>Subject</label><input name="subject" required></div><div class="field"><label>Message</label><textarea name="body" required></textarea></div>`,
+        onSubmit: async (f) => { await api(`/api/admin/users/${id}/messages`, { body: formData(f) }); toast('Message sent', 'success'); reload(); },
+      }));
+      act('status', async () => {
+        await api(`/api/admin/users/${id}/status`, { body: { status: u.status === 'active' ? 'suspended' : 'active' } });
+        toast(u.status === 'active' ? 'Online access suspended' : 'Customer reactivated', 'success'); reload();
+      });
+      act('delete', () => modal({
+        title: 'Delete customer', submitText: 'Delete permanently', danger: true,
+        body: `<p>Permanently delete <b>${esc(u.first_name)} ${esc(u.last_name)}</b> and all their records? All account balances must be zero first. This cannot be undone.</p>`,
+        onSubmit: async () => { await api('/api/admin/users/' + id, { method: 'DELETE' }); toast('Customer deleted', 'success'); location.hash = '#/customers'; },
+      }));
+      act('open', () => {
+        const m = modal({
+          title: 'Open new account', submitText: 'Open account', body: accountFields(),
+          onSubmit: async (f) => { await api(`/api/admin/users/${id}/accounts`, { body: formData(f) }); toast('Account opened', 'success'); reload(); },
+        });
+        wireAccountFields(m.el);
+      });
+
+      page.querySelectorAll('[data-post]').forEach((b) => b.onclick = () => {
+        const a = accounts.find((x) => x.id == b.dataset.post);
+        const m = modal({
+          title: `Post transaction · ${acctName(a)} ${a.masked}`, submitText: 'Post transaction',
+          body: `<p class="small muted">Current ${a.is_credit ? 'balance owed' : 'balance'}: <b>${money(a.balance)}</b></p>
+            <div class="field"><label>Type</label><select name="direction">
+              <option value="in">${a.is_credit ? 'Payment / credit (reduces amount owed)' : 'Credit — add funds (deposit)'}</option>
+              <option value="out">${a.is_credit ? 'Charge / debit (increases amount owed)' : 'Debit — remove funds (withdrawal)'}</option></select></div>
+            <div class="grid-2"><div class="field"><label>Amount ($)</label><input name="amount" type="number" step="0.01" min="0.01" required></div>
+              <div class="field"><label>Category</label><select name="category">${CATEGORIES.map((c) => `<option>${c}</option>`).join('')}</select></div></div>
+            <div class="field"><label>Description (shown to customer)</label><input name="description" maxlength="140" placeholder="e.g. Cash deposit – Main St branch"></div>
+            <label class="check small"><input type="checkbox" name="allowOverdraft"> Allow overdraft / over-limit</label>
+            <p class="small muted" id="preview" style="margin-top:12px"></p>`,
+          onSubmit: async (f) => {
+            const d = formData(f);
+            const r = await api(`/api/admin/accounts/${a.id}/transactions`, { body: { ...d, allowOverdraft: !!d.allowOverdraft } });
+            toast('Posted · ' + r.reference, 'success'); reload();
+          },
+        });
+        const f = m.el;
+        const cat = () => (f.category.value = f.direction.value === 'in' ? (a.is_credit ? 'payment' : 'deposit') : (a.is_credit ? 'purchase' : 'withdrawal'));
+        const preview = () => {
+          const amt = +f.amount.value || 0, sign = (f.direction.value === 'in' ? 1 : -1) * (a.is_credit ? -1 : 1);
+          f.querySelector('#preview').textContent = amt ? `New ${a.is_credit ? 'balance owed' : 'balance'}: ${money(a.balance + sign * amt)}` : '';
+        };
+        f.direction.onchange = () => { cat(); preview(); }; f.amount.oninput = preview; cat();
+      });
+
+      page.querySelectorAll('[data-edit-acct]').forEach((b) => b.onclick = () => {
+        const a = accounts.find((x) => x.id == b.dataset.editAcct);
+        modal({
+          title: `Manage ${acctName(a)} ${a.masked}`,
+          body: `<div class="grid-2"><div class="field"><label>Nickname</label><input name="nickname" value="${esc(a.nickname)}"></div>
+              <div class="field"><label>Status</label><select name="status">${['active', 'frozen', 'closed'].map((s) => `<option ${s === a.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div></div>
+            <div class="grid-2"><div class="field"><label>${a.is_credit ? 'APR' : 'APY'} (%)</label><input name="rate" type="number" step="0.01" value="${a.rate}"></div>
+              ${a.type === 'credit_card' ? `<div class="field"><label>Credit limit ($)</label><input name="credit_limit" type="number" step="0.01" value="${a.credit_limit}"></div>` : ''}</div>
+            ${a.card_last4 ? `<label class="check small"><input type="checkbox" name="card_locked" ${a.card_locked ? 'checked' : ''}> Card ••${esc(a.card_last4)} locked</label>` : ''}
+            <p class="small muted" style="margin-top:12px">Frozen accounts can't send or receive transfers. Accounts must have a zero balance to close.</p>`,
+          onSubmit: async (f) => {
+            const d = formData(f);
+            await api('/api/admin/accounts/' + a.id, { method: 'PUT', body: { ...d, card_locked: !!d.card_locked } });
+            toast('Account updated', 'success'); reload();
+          },
+        });
+      });
+    },
+
+    async transactions() {
+      page.innerHTML = `<div class="card"><div class="toolbar"><input type="search" id="q" placeholder="Search description, reference, account or customer"></div><div id="list" class="muted">Loading…</div></div>`;
+      let timer;
+      const load = async () => {
+        const { transactions } = await api('/api/admin/transactions?q=' + encodeURIComponent($('#q').value));
+        $('#list').classList.remove('muted');
+        $('#list').innerHTML = txTable(transactions, { withCustomer: true });
+        bindReverse(load);
+      };
+      $('#q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
+      load();
+    },
+
+    async care(chatId) {
+      clearInterval(careTimer);
+      const filt = sessionStorage.getItem('care_status') ?? '';
+      const STATUS = { ai: ['Assistant handling', 'info'], needs_human: ['Needs a human', 'warn'], human: ['With specialist', 'good'], closed: ['Resolved', ''] };
+      const badge = (s) => `<span class="badge ${STATUS[s][1]}">${STATUS[s][0]}</span>`;
+      const fmt = (s) => esc(s).replace(/\n/g, '<br>');
+      let lastId = 0, current = null;
+
+      async function loadList() {
+        const { chats, ai, model } = await api('/api/admin/chats?status=' + filt);
+        stats = await api('/api/admin/stats'); renderNav('care');
+        const box = $('#chatList');
+        if (!box) return;
+        $('#aiState').innerHTML = ai ? `<span class="badge good" style="text-transform:none">AI assistant on · ${esc(model)}</span>` : '<span class="badge warn" style="text-transform:none">AI assistant off — add ANTHROPIC_API_KEY to .env; every chat goes to a human</span>';
+        box.innerHTML = chats.map((c) => `<div class="chat-row ${c.id == chatId ? 'on' : ''}" data-chat="${c.id}">
+            <div><b>${esc(c.name || 'Website visitor')}</b> ${c.user_id ? '<span class="badge info">Customer</span>' : '<span class="badge">Guest</span>'}</div>
+            <div class="small muted" style="text-align:right">${dateTime(c.updated_at)}</div>
+            <div>${badge(c.status)} ${c.unread_admin ? `<span class="badge bad">${c.unread_admin} new</span>` : ''}</div><div></div>
+            <div class="last">${esc(c.last_message)}</div></div>`).join('') || '<div class="empty">No conversations here yet.</div>';
+        box.querySelectorAll('[data-chat]').forEach((r) => r.onclick = () => (location.hash = '#/care/' + r.dataset.chat));
+      }
+
+      function msgHtml(m) {
+        if (m.sender === 'system') return `<div class="cb-msg system"><div class="cb-bubble">${icon('shield', 12)} ${fmt(m.body)} · ${dateTime(m.created_at)}</div></div>`;
+        const who = m.sender === 'user' ? esc(current.name || 'Visitor') : m.sender === 'agent' ? `${esc(m.agent_name || 'Staff')} · Customer care` : 'Virtual assistant';
+        // From the admin's side the customer is on the left; bank replies are on the right.
+        const side = m.sender === 'user' ? 'ai' : m.sender === 'agent' ? 'agent' : 'user';
+        return `<div class="cb-msg ${side}" style="${side !== 'ai' ? 'align-self:flex-end;align-items:flex-end' : ''}"><div class="cb-who">${who} · ${dateTime(m.created_at)}</div>
+          <div class="cb-bubble" ${side === 'user' ? 'style="background:#e9eef6;color:var(--ink);border-color:#d5deeb"' : ''}>${fmt(m.body)}</div></div>`;
+      }
+
+      async function loadThread(initial) {
+        if (!chatId) return;
+        const data = await api(`/api/admin/chats/${chatId}?after=${initial ? 0 : lastId}`);
+        const statusChanged = current && current.status !== data.chat.status;
+        current = data.chat;
+        const log = $('#threadLog');
+        if (!log) return;
+        if (initial || statusChanged) renderThreadHead();
+        if (data.messages.length) {
+          log.insertAdjacentHTML('beforeend', data.messages.map(msgHtml).join(''));
+          lastId = data.messages.at(-1).id;
+          log.scrollTop = log.scrollHeight;
+        }
+      }
+
+      function renderThreadHead() {
+        const c = current;
+        $('#threadHead').innerHTML = `<div style="min-width:0"><b>${esc(c.name || 'Website visitor')}</b> ${badge(c.status)}
+            <div class="small muted">${c.user_id ? `Customer · <a href="#/customer/${c.user_id}">${esc(c.username)}</a>` : 'Guest visitor'}${c.email ? ' · ' + esc(c.email) : ''}${c.phone ? ' · ' + esc(c.phone) : ''} · started ${dateTime(c.created_at)}</div></div>
+          <div class="actions">${c.status !== 'human' ? '<button class="btn btn-sm btn-ghost" data-act="take">Take over</button>' : ''}
+            ${c.ai_enabled ? '' : '<button class="btn btn-sm btn-ghost" data-act="ai">Hand back to AI</button>'}
+            ${c.status !== 'closed' ? '<button class="btn btn-sm" data-act="resolve">Mark resolved</button>' : ''}</div>`;
+        $('#threadHead').querySelectorAll('[data-act]').forEach((b) => b.onclick = async () => {
+          await api(`/api/admin/chats/${chatId}`, { body: { action: b.dataset.act } });
+          toast({ take: 'You’re now handling this chat', ai: 'Handed back to the virtual assistant', resolve: 'Conversation resolved' }[b.dataset.act], 'success');
+          await loadThread(false); renderThreadHead(); loadList();
+        });
+      }
+
+      const tabs = [['', 'Open'], ['needs_human', 'Needs a human'], ['human', 'With specialist'], ['ai', 'Assistant'], ['closed', 'Resolved'], ['all', 'All']];
+      page.innerHTML = `
+        <div class="toolbar" style="justify-content:space-between"><div class="tabs" id="careTabs">${tabs.map(([v, l]) => `<button data-v="${v}" class="${filt === v ? 'on' : ''}">${l}</button>`).join('')}</div><span id="aiState"></span></div>
+        <div class="care-layout">
+          <div class="card"><div id="chatList" style="max-height:calc(100vh - 210px);overflow-y:auto"><div class="empty">Loading…</div></div></div>
+          <div class="card care-thread">${chatId ? `
+            <div class="card-head" id="threadHead" style="padding:14px 18px;margin:0;border-bottom:1px solid var(--line);flex-wrap:wrap"></div>
+            <div class="cb-log" id="threadLog"></div>
+            <form class="cb-input" id="replyForm"><textarea rows="2" maxlength="4000" placeholder="Reply as CapitalBridge customer care… (Enter to send, Shift+Enter for a new line)"></textarea><button class="btn btn-sm">Send reply</button></form>
+            <div class="cb-foot">Replying takes the conversation over from the virtual assistant. The customer sees your reply in their chat.</div>`
+            : '<div class="empty" style="margin:auto">Select a conversation to read the full transcript and reply.</div>'}</div>
+        </div>`;
+      $('#careTabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; sessionStorage.setItem('care_status', b.dataset.v); views.care(chatId); };
+      if (chatId) {
+        const form = $('#replyForm');
+        const ta = form.querySelector('textarea');
+        ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const text = ta.value.trim(); if (!text) return;
+          ta.value = '';
+          try { await api(`/api/admin/chats/${chatId}/messages`, { body: { text } }); await loadThread(false); renderThreadHead(); loadList(); }
+          catch (ex) { ta.value = text; toast(ex.message, 'error'); }
+        });
+      }
+      await Promise.all([loadList(), loadThread(true)]);
+      clearInterval(careTimer);
+      careTimer = setInterval(() => {
+        if (!location.hash.startsWith('#/care')) return clearInterval(careTimer);
+        loadThread(false).catch(() => {}); loadList().catch(() => {});
+      }, 5000);
+    },
+
+    async requests() {
+      const filt = { status: sessionStorage.getItem('rq_status') ?? 'new', kind: sessionStorage.getItem('rq_kind') || '' };
+      const load = async () => {
+        const { requests, kinds } = await api(`/api/admin/requests?status=${filt.status}&kind=${filt.kind}`);
+        stats = await api('/api/admin/stats'); renderNav('requests');
+        const statusTabs = [['new', 'New'], ['in_progress', 'In progress'], ['closed', 'Closed'], ['', 'All']];
+        page.innerHTML = `<div class="card">
+          <div class="toolbar"><div class="tabs" id="rqStatus">${statusTabs.map(([v, l]) => `<button data-v="${v}" class="${filt.status === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+            <select id="rqKind" style="width:auto"><option value="">All request types</option>${Object.entries(kinds).map(([k, l]) => `<option value="${k}" ${filt.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+          ${requests.length ? `<div class="table-wrap"><table><thead><tr><th>Received</th><th>Type</th><th>Reference</th><th>From</th><th>Summary</th><th>Status</th></tr></thead><tbody>
+            ${requests.map((r) => `<tr class="clickable" data-rq="${r.id}"><td class="muted small" style="white-space:nowrap">${dateTime(r.created_at)}</td>
+              <td><span class="badge ${r.kind === 'fraud' || r.kind === 'lost_card' ? 'bad' : r.kind === 'application' ? 'good' : 'info'}">${esc(r.label)}</span></td>
+              <td class="num small">${esc(r.reference)}</td><td><b>${esc(r.name)}</b><div class="small muted">${esc(r.email || r.phone)}</div></td>
+              <td class="small">${esc(summary(r))}</td><td>${rqBadge(r.status)}</td></tr>`).join('')}</tbody></table></div>`
+            : '<div class="empty">No requests here. Applications, contact forms, appointments and reports from the website appear in this list.</div>'}</div>`;
+        page.querySelector('#rqStatus').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; filt.status = b.dataset.v; sessionStorage.setItem('rq_status', filt.status); load(); };
+        page.querySelector('#rqKind').onchange = (e) => { filt.kind = e.target.value; sessionStorage.setItem('rq_kind', filt.kind); load(); };
+        page.querySelectorAll('[data-rq]').forEach((tr) => tr.onclick = () => openRequest(requests.find((r) => r.id == tr.dataset.rq), load));
+      };
+      await load();
+    },
+
+    async inbox() {
+      const { messages } = await api('/api/admin/inbox');
+      page.innerHTML = `<div class="card"><div class="card-head"><h2>Messages from customers</h2></div>
+        ${messages.map((m) => `<div class="msg open ${m.is_read ? '' : 'unread'}"><div style="display:flex;justify-content:space-between;gap:10px"><span class="subj">${esc(m.subject)}</span><span class="small muted">${dateTime(m.created_at)}</span></div>
+          <div class="small"><a href="#/customer/${m.user_id}">${esc(m.first_name)} ${esc(m.last_name)} (${esc(m.username)})</a></div><div class="body">${esc(m.body)}</div></div>`).join('') || '<div class="empty">No messages yet.</div>'}
+        <p class="small muted">Open the customer's profile to reply — replying marks their messages as read.</p></div>`;
+    },
+
+    async announcements() {
+      const { announcements } = await api('/api/admin/announcements');
+      page.innerHTML = `<div class="two-col">
+        <div class="card"><div class="card-head"><h2>Published on the homepage</h2></div>
+          ${announcements.map((a) => `<div class="msg open"><div style="display:flex;justify-content:space-between;gap:10px"><span class="subj">${esc(a.title)}</span><button class="link-btn small" data-del="${a.id}">Remove</button></div>
+            <div class="small muted">${dateTime(a.created_at)}</div><div class="body">${esc(a.body)}</div></div>`).join('') || '<div class="empty">No announcements.</div>'}</div>
+        <div class="card"><div class="card-head"><h3>New announcement</h3></div>
+          <form id="annForm"><div class="form-error"></div><div class="field"><label>Title</label><input name="title" required maxlength="120"></div>
+          <div class="field"><label>Text</label><textarea name="body" required maxlength="1000"></textarea></div><button class="btn">Publish</button></form></div></div>`;
+      page.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { await api('/api/admin/announcements/' + b.dataset.del, { method: 'DELETE' }); views.announcements(); });
+      $('#annForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try { await api('/api/admin/announcements', { body: formData(e.target) }); toast('Published', 'success'); views.announcements(); }
+        catch (ex) { const er = e.target.querySelector('.form-error'); er.textContent = ex.message; er.classList.add('show'); }
+      });
+    },
+
+    async audit() {
+      const { entries } = await api('/api/admin/audit');
+      page.innerHTML = `<div class="card"><div class="card-head"><h2>Audit log</h2><span class="small muted">Last 300 events</span></div>
+        <div class="table-wrap"><table><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Details</th></tr></thead><tbody>
+        ${entries.map((e) => `<tr><td class="muted small" style="white-space:nowrap">${dateTime(e.created_at)}</td><td>${esc(e.username || '—')}</td><td><span class="badge">${esc(e.action.replace(/_/g, ' '))}</span></td><td class="small">${esc(e.details)}</td></tr>`).join('')}
+        </tbody></table></div></div>`;
+    },
+
+    async settings() {
+      page.innerHTML = `<div class="card" style="max-width:520px">
+        ${me.must_change_pw ? '<div class="notice">You are using the initial admin password. Change it now, then delete data/admin-credentials.txt.</div>' : ''}
+        <div class="card-head"><h2>Change admin password</h2></div>
+        <form id="pw"><div class="form-error"></div>
+          <div class="field"><label>Current password</label><input name="current" type="password" autocomplete="current-password" required></div>
+          <div class="field"><label>New password</label><input name="next" type="password" minlength="8" autocomplete="new-password" required></div>
+          <div class="field"><label>Confirm new password</label><input name="confirm" type="password" autocomplete="new-password" required></div>
+          <button class="btn">Update password</button></form>
+        <p class="small muted" style="margin-top:16px">Signed in as <b>${esc(me.username)}</b>.</p></div>`;
+      $('#pw').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const er = e.target.querySelector('.form-error'); er.classList.remove('show');
+        try {
+          const f = formData(e.target);
+          if (f.next !== f.confirm) throw new Error('New passwords do not match');
+          await api('/api/me/password', { body: f }); me.must_change_pw = false; toast('Password updated', 'success'); views.settings();
+        } catch (ex) { er.textContent = ex.message; er.classList.add('show'); }
+      });
+    },
+  };
+
+  async function route() {
+    const [, name = 'dashboard', arg] = location.hash.split('/');
+    const view = views[name] ? name : 'dashboard';
+    renderNav(view === 'customer' ? 'customers' : view);
+    $('#pageTitle').textContent = (NAV.find((n) => n[0] === view) || [, , 'Customer'])[2];
+    $('#sidebar').classList.remove('open');
+    page.innerHTML = '<div class="muted">Loading…</div>';
+    try { await views[view](arg); } catch (e) { page.innerHTML = `<div class="card"><div class="empty">${esc(e.message)}</div></div>`; }
+    window.scrollTo(0, 0);
+  }
+
+  (async () => {
+    try { me = (await api('/api/me')).user; } catch { return; }
+    if (me.role !== 'admin') { location.href = '/app'; return; }
+    $('#sideLogo').innerHTML = CB.logo('#/dashboard');
+    $('#who').textContent = me.username;
+    $('#hamb').innerHTML = icon('menu', 24);
+    $('#hamb').onclick = () => $('#sidebar').classList.toggle('open');
+    $('#quickCreate').onclick = () => createCustomer();
+    stats = await api('/api/admin/stats').catch(() => null);
+    window.addEventListener('hashchange', route);
+    if (me.must_change_pw && !location.hash) location.hash = '#/settings';
+    route();
+  })();
+})();

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CapitalBridge Bank | Banking, Credit Cards, Loans & Investing</title>
+<meta name="description" content="CapitalBridge Bank: checking, savings, credit cards, home loans and investing with live markets and news.">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<div id="siteHeader"></div>
+
+<div class="ticker" aria-label="Live market ticker">
+  <div class="ticker-label"><span class="live-dot"></span><span data-es="En vivo">Live</span></div>
+  <div class="ticker-track" id="tickerTrack"><span class="ticker-item muted">Loading market data…</span></div>
+</div>
+
+<section class="hero">
+  <div class="container">
+    <form class="signin-card" id="heroLogin" autocomplete="on">
+      <h2 data-es="Bienvenido de nuevo">Welcome back</h2>
+      <div class="lock"><span id="lockIco"></span><span data-es="Inicio de sesión seguro en Banca en Línea">Secure sign in to Online Banking</span></div>
+      <div class="form-error" id="heroErr"></div>
+      <div class="field"><label for="hu" data-es="ID de usuario">User ID</label><input id="hu" name="username" autocomplete="username" required></div>
+      <div class="field"><label for="hp" data-es="Contraseña">Password</label><input id="hp" name="password" type="password" autocomplete="current-password" required></div>
+      <label class="check small" style="margin:4px 0 16px"><input type="checkbox" name="remember"> <span data-es="Guardar ID de usuario">Save user ID</span></label>
+      <button class="btn btn-block" type="submit" data-es="Iniciar sesión">Log in</button>
+      <div class="links"><a href="/p/forgot" data-es="¿Olvidó su ID o contraseña?">Forgot ID/Password?</a><a href="/p/security" data-es="Seguridad y ayuda">Security &amp; Help</a></div>
+    </form>
+    <div class="hero-copy">
+      <span class="eyebrow" data-es="Su banco de confianza desde 1983">Trusted since 1983</span>
+      <h1 data-es="Una banca que une el presente con el futuro.">Banking that bridges today and tomorrow.</h1>
+      <p class="lead" data-es="Cheques, ahorros, crédito e inversiones en un solo lugar seguro, con mercados en tiempo real, información útil y personas que sí contestan el teléfono.">Checking, savings, credit and investing in one secure place — with real-time markets, smart insights and people who pick up the phone.</p>
+      <div class="hero-cta"><a class="btn btn-gold" href="/p/open-account" data-es="Abrir una cuenta">Open an account</a><a class="btn btn-light" href="#products" data-es="Ver productos">Explore accounts</a></div>
+      <div class="hero-stats">
+        <div><b>4.35%</b><span data-es="APY en Advantage Savings¹">APY on Advantage Savings¹</span></div>
+        <div><b>$0</b><span data-es="Cargo mensual con depósito directo">Monthly fee with direct deposit</span></div>
+        <div><b>24/7</b><span data-es="Monitoreo de fraude">Fraud monitoring</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="quick-links">
+  <div class="container" id="quickLinks"></div>
+</div>
+
+<section class="block" id="products">
+  <div class="container">
+    <div class="section-head"><div><h2 data-es="Elija lo que mejor le funcione">Choose what's right for you</h2><p data-es="Productos diseñados para su manera de vivir, ahorrar y gastar.">Products built around how you actually live, save and spend.</p></div>
+      <a class="btn btn-ghost btn-sm" href="/p/open-account" data-es="Abrir una cuenta">Open an account</a></div>
+    <div class="products" id="productGrid"></div>
+  </div>
+</section>
+
+<section class="block" id="markets" style="background:#fff">
+  <div class="container">
+    <div class="section-head">
+      <div><h2 data-es="Mercados hoy">Markets today</h2><p data-es="Índices, acciones, criptomonedas y divisas en vivo.">Live indices, stocks, crypto and currency rates.</p></div>
+      <div class="asof"><span class="live-dot"></span><span id="asOf">Connecting…</span></div>
+    </div>
+    <div class="markets-grid">
+      <div class="index-cards" id="indexCards"></div>
+      <div class="card" style="box-shadow:none;border:1px solid var(--line)">
+        <div class="card-head"><div class="tabs" id="mktTabs"><button class="on" data-t="stocks" data-es="Acciones">Stocks</button><button data-t="crypto" data-es="Cripto">Crypto</button><button data-t="fx" data-es="Divisas">Currencies</button></div>
+          <a href="/p/investing" class="small" data-es="Invertir →">Invest →</a></div>
+        <div class="table-wrap" id="mktTable"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="news">
+  <div class="container">
+    <div class="section-head">
+      <div><h2 data-es="Noticias y análisis">News &amp; insights</h2><p data-es="Los principales titulares de negocios y mercados, actualizados durante el día.">Top business and market headlines, updated throughout the day.</p></div>
+      <div class="tabs" id="newsTabs"><button class="on" data-t="business" data-es="Negocios">Business</button><button data-t="markets" data-es="Mercados">Markets</button><button data-t="personal" data-es="Finanzas personales">Personal finance</button></div>
+    </div>
+    <div class="news-grid" id="newsGrid"></div>
+  </div>
+</section>
+
+<section class="block habits" id="habits">
+  <div class="container">
+    <div class="section-head"><div><h2 data-es="Mejores hábitos financieros">Better Money Habits®</h2><p data-es="Orientación práctica para fortalecer su confianza financiera.">Practical guidance to help you grow your financial confidence.</p></div>
+      <a class="btn btn-ghost btn-sm" href="/p/habits" data-es="Ver todos los artículos">See all articles</a></div>
+    <div class="habit-grid">
+      <a class="habit" href="/p/habits-budgeting"><div class="k" data-es="Presupuesto">Budgeting</div><h4 data-es="La regla 50/30/20, explicada">The 50/30/20 rule, explained</h4><p data-es="Divida su ingreso entre necesidades, deseos y ahorro.">Split take-home pay between needs, wants and savings to stay on track.</p></a>
+      <a class="habit" href="/p/habits-credit"><div class="k" data-es="Crédito">Credit</div><h4 data-es="5 factores que definen su puntaje">5 factors that shape your score</h4><p data-es="El historial de pagos y el uso del crédito son lo más importante.">Payment history and utilization matter most — here's how to improve both.</p></a>
+      <a class="habit" href="/p/habits-emergency-fund"><div class="k" data-es="Ahorro">Saving</div><h4 data-es="Cree un fondo de emergencia">Build an emergency fund</h4><p data-es="Procure de tres a seis meses de gastos y automatice el hábito.">Aim for three to six months of expenses, and automate the habit.</p></a>
+      <a class="habit" href="/p/habits-scams"><div class="k" data-es="Seguridad">Security</div><h4 data-es="Detecte una estafa a tiempo">Spot a scam before it costs you</h4><p data-es="Nunca le pediremos su contraseña o código por teléfono, texto o correo.">We will never ask for your password or one-time code by phone, text or email.</p></a>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="container">
+    <div class="calc">
+      <div>
+        <span class="eyebrow" style="color:var(--gold-500)" data-es="Calculadora de ahorro">Savings calculator</span>
+        <h2 style="font-size:30px;font-weight:800" data-es="Vea cómo pueden crecer sus ahorros">See how your savings can grow</h2>
+        <p class="muted" data-es="Calcule sus ganancias con Advantage Savings a la tasa de hoy. El interés se capitaliza mensualmente.">Estimate earnings with Advantage Savings at today's rate. Interest compounds monthly.</p>
+        <div class="field"><label><span data-es="Depósito inicial">Initial deposit</span>: <span id="cvDep" class="num"></span></label><input type="range" id="cDep" min="0" max="100000" step="500" value="10000"></div>
+        <div class="field"><label><span data-es="Aporte mensual">Monthly contribution</span>: <span id="cvMon" class="num"></span></label><input type="range" id="cMon" min="0" max="5000" step="50" value="300"></div>
+        <div class="field"><label><span data-es="Años">Years</span>: <span id="cvYrs" class="num"></span></label><input type="range" id="cYrs" min="1" max="30" step="1" value="5"></div>
+      </div>
+      <div class="calc-out">
+        <div style="color:#a9bcd6" data-es="Saldo estimado">Estimated balance</div>
+        <div class="big num" id="cOut">$0</div>
+        <div style="color:#a9bcd6" id="cInt"></div>
+        <a class="btn btn-gold" style="margin-top:22px" href="/p/open-account?product=savings" data-es="Abrir una cuenta de ahorro">Open a savings account</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="container">
+  <div class="cta-band">
+    <div><h2 data-es="¿Listo para abrir su cuenta con CapitalBridge?">Ready to bank with CapitalBridge?</h2><p data-es="Solicite en línea en minutos, visite una sucursal o llame al 1-800-555-0199.">Apply online in minutes, visit a financial center or call 1-800-555-0199.</p></div>
+    <div class="actions"><a class="btn btn-gold" href="/p/open-account" data-es="Abrir una cuenta">Open an account</a><a class="btn btn-light" href="/p/appointment" data-es="Programar una cita">Schedule an appointment</a></div>
+  </div>
+</section>
+
+<div id="siteFooter"></div>
+
+<script src="/js/common.js"></script>
+<script src="/js/site.js"></script>
+<script src="/js/home.js"></script>
+<script src="/js/chat.js"></script>
+</body>
+</html>

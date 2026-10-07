@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Online Banking | CapitalBridge Bank</title>
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <span id="sideLogo"></span>
+    <nav class="side-nav" id="sideNav"></nav>
+    <div class="side-foot">
+      <div class="who" id="who"></div>
+      <div class="small" id="lastLogin" style="margin-bottom:10px"></div>
+      <button class="link-btn" style="color:#e0a83e" onclick="CB.logout()">Sign out</button>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="app-top">
+      <div style="display:flex;align-items:center;gap:12px;min-width:0">
+        <button class="hamburger" id="hamb" aria-label="Menu"></button>
+        <h1 id="pageTitle">Overview</h1>
+      </div>
+      <div class="mini-ticker" id="miniTicker"></div>
+      <div class="right"><div class="avatar" id="avatar"></div></div>
+    </header>
+    <main class="page" id="page"></main>
+  </div>
+</div>
+<script src="/js/common.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/chat.js"></script>
+</body>
+</html>
