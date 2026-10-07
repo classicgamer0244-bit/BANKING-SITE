@@ -167,14 +167,13 @@
       await load();
     },
 
-    async transfer() {
+    async transfer(arg, query) {
       const [{ }, tSettings] = await Promise.all([
         refreshAccounts(),
         api('/api/transfer-settings').catch(() => ({ transfers_paused: false, notice_enabled: false })),
       ]);
       const from = debitable().filter((a) => a.type !== 'credit_card');
-      const hashPart = location.hash.split('?')[1] || '';
-      const params = new URLSearchParams(hashPart);
+      const params = query || new URLSearchParams(location.hash.split('?')[1] || '');
       let mode = params.get('mode') === 'external' ? 'external' : 'own';
       const prefillFrom = params.get('from');
 
@@ -629,13 +628,16 @@
   async function route() {
     if (leaveCare) { leaveCare(); leaveCare = null; }
     document.body.classList.remove('on-care');
-    const [, name = 'overview', arg] = location.hash.split('/');
+    const rawHash = location.hash.replace(/^#\/?/, '');
+    const [pathPart, queryPart] = rawHash.split('?');
+    const [name = 'overview', arg] = pathPart.split('/');
     const view = views[name] ? name : 'overview';
     renderNav(view);
-    $('#pageTitle').textContent = NAV.find((n) => n[0] === view)[2];
+    const navItem = NAV.find((n) => n[0] === view);
+    $('#pageTitle').textContent = navItem ? navItem[2] : 'Overview';
     $('#sidebar').classList.remove('open');
     page.innerHTML = '<div class="muted">Loading…</div>';
-    try { await views[view](arg); } catch (e) { page.innerHTML = `<div class="card"><div class="empty">${esc(e.message)}</div></div>`; }
+    try { await views[view](arg, new URLSearchParams(queryPart || '')); } catch (e) { page.innerHTML = `<div class="card"><div class="empty">${esc(e.message)}</div></div>`; }
     window.scrollTo(0, 0);
   }
 
