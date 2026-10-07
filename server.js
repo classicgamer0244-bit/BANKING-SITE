@@ -478,7 +478,7 @@ admin.post('/users', wrap((req, res) => {
     const r = db.prepare(`INSERT INTO users (role, username, password_hash, first_name, last_name, email, phone, dob, address, city, state, zip, ssn_last4, must_change_pw)
                           VALUES ('customer', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(username, hashPassword(password), first, last, str(b.email, 120), str(b.phone, 30), str(b.dob, 10),
-        str(b.address), str(b.city, 80), str(b.state, 40), str(b.zip, 12), ssn, b.must_change_pw === false ? 0 : 1);
+        str(b.address), str(b.city, 80), str(b.state, 40), str(b.zip, 12), ssn, 0);
     const userId = Number(r.lastInsertRowid);
     if (sample) {
       generated = generateHistory(db, { userId, ...sample, newAccountNumber, randomDigits, newReference, actorId: req.user.id });
@@ -641,7 +641,7 @@ admin.post('/users/:id/reset-password', wrap((req, res) => {
   const u = getUser(req.params.id);
   const pw = String(req.body.password ?? '');
   if (pw.length < 8) throw new BankError('Password must be at least 8 characters');
-  db.prepare('UPDATE users SET password_hash = ?, must_change_pw = 1 WHERE id = ?').run(hashPassword(pw), u.id);
+  db.prepare('UPDATE users SET password_hash = ?, must_change_pw = 0 WHERE id = ?').run(hashPassword(pw), u.id);
   db.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id);
   audit(req.user.id, 'reset_password', u.username);
   res.json({ ok: true });

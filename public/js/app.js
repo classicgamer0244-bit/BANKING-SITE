@@ -60,7 +60,6 @@
       const hour = new Date().getHours();
 
       page.innerHTML = `
-        ${me.must_change_pw ? `<div class="notice"><span>${icon('shield', 18)} For your security, please change the temporary password you were given.</span><a class="btn btn-sm btn-gold" href="#/profile">Change password</a></div>` : ''}
         <h2 style="font-size:24px;margin-bottom:18px">Good ${hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'}, ${esc(me.first_name)}</h2>
         <div class="kpis">
           <div class="kpi dark"><div class="l">Total deposits</div><div class="v num">${money(deposits)}</div><div class="s">Across ${accounts.filter((a) => !a.is_credit).length} accounts</div></div>
@@ -430,6 +429,5 @@
     window.addEventListener('hashchange', route);
     route();
     miniTicker(); setInterval(miniTicker, 60000);
-    if (me.must_change_pw && location.hash !== '#/profile') toast('Please change your temporary password in Profile & Security');
   })();
 })();

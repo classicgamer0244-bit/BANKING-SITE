@@ -113,8 +113,7 @@
         <div class="grid-3"><div class="field"><label>SSN (last 4 only)</label><input name="ssn_last4" maxlength="4" inputmode="numeric"></div></div>
         <h4 style="margin:10px 0 12px">Online banking login</h4>
         <div class="grid-2"><div class="field"><label>User ID *</label><input name="username" required minlength="4" autocomplete="off"></div>
-          <div class="field"><label>Temporary password *</label><div style="display:flex;gap:6px"><input name="password" required minlength="8" autocomplete="new-password" value="${genPassword()}"><button type="button" class="btn btn-ghost btn-sm" data-gen>New</button></div></div></div>
-        <label class="check small" style="margin-bottom:16px"><input type="checkbox" name="must_change_pw" checked> Require password change at first sign-in</label>
+          <div class="field"><label>Password *</label><div style="display:flex;gap:6px"><input name="password" required minlength="8" autocomplete="new-password" value="${genPassword()}"><button type="button" class="btn btn-ghost btn-sm" data-gen>New</button></div></div></div>
         ${config.demo ? `
         <div class="sample-box">
           <label class="check" style="margin:0 0 4px"><input type="checkbox" name="with_sample" checked> <b>Generate accounts &amp; history</b> <span class="badge warn">Demo mode</span></label>
@@ -135,7 +134,7 @@
         <div data-acct-box>${accountFields('a_')}</div></div>`,
       onSubmit: async (f) => {
         const d = formData(f);
-        const body = { ...d, must_change_pw: !!d.must_change_pw, accounts: d.with_account ? [{ type: d.a_type, nickname: d.a_nickname, opening: d.a_opening, credit_limit: d.a_credit_limit }] : [] };
+        const body = { ...d, accounts: d.with_account ? [{ type: d.a_type, nickname: d.a_nickname, opening: d.a_opening, credit_limit: d.a_credit_limit }] : [] };
         if (d.with_sample) {
           body.accounts = [];
           const perAccount = f.querySelector('[data-per-account-fields]').style.display !== 'none';
@@ -334,7 +333,7 @@
       act('reset', () => {
         const m = modal({
           title: 'Reset password', submitText: 'Reset password',
-          body: `<p class="muted">The customer will be signed out and must choose a new password at next sign-in. Share the temporary password through a secure channel.</p>
+          body: `<p class="muted">The customer will be signed out and can sign in with this new password. Share it through a secure channel.</p>
             <div class="field"><label>Temporary password</label><input name="password" minlength="8" required value="${genPassword()}"></div>`,
           onSubmit: async (f) => { await api(`/api/admin/users/${id}/reset-password`, { body: formData(f) }); toast('Password reset', 'success'); },
         });
