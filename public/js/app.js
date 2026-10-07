@@ -113,11 +113,14 @@
 
   async function openNotificationsModal() {
     try {
-      const { notifications } = await api('/api/notifications');
+      const { notifications: rawList } = await api('/api/notifications');
       await api('/api/notifications/read', { method: 'POST' }).catch(() => {});
       const badge = $('#notifBadge');
       if (badge) { badge.hidden = true; badge.textContent = '0'; }
       unreadNotifs = 0;
+
+      // Sort newest notifications to the top, oldest to the bottom
+      const notifications = [...rawList].sort((a, b) => new Date(b.created_at.replace(' ', 'T') + 'Z') - new Date(a.created_at.replace(' ', 'T') + 'Z') || b.id - a.id);
 
       modal({
         title: 'Notifications & Alerts',

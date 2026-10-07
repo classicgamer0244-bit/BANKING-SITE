@@ -365,7 +365,7 @@ function addNotification(userId, title, message, type = 'system', reference = ''
 }
 
 function getUserNotifications(userId, limit = 50) {
-  return db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(userId, limit);
+  return db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?').all(userId, limit);
 }
 
 function markNotificationsRead(userId) {
