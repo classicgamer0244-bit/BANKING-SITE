@@ -153,6 +153,37 @@ for (const col of ['job_title', 'employer']) {
 }
 try { db.exec('ALTER TABLE users ADD COLUMN annual_salary_cents INTEGER NOT NULL DEFAULT 0'); } catch { /* column exists */ }
 
+db.exec(`
+CREATE TABLE IF NOT EXISTS system_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`);
+
+function getTransferSettings() {
+  const rows = db.prepare('SELECT key, value FROM system_settings WHERE key LIKE ?').all('transfer_%');
+  const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return {
+    transfers_paused: map['transfer_paused'] === '1',
+    notice_enabled: map['transfer_notice_enabled'] === '1',
+    notice_title: map['transfer_notice_title'] || 'Important Transfer Notice',
+    notice_message: map['transfer_notice_message'] || 'Please verify your transfer details and recipient information before proceeding.',
+    notice_type: map['transfer_notice_type'] || 'info',
+  };
+}
+
+function setTransferSettings({ transfers_paused, notice_enabled, notice_title, notice_message, notice_type }) {
+  const upsert = db.prepare('INSERT INTO system_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+  tx(() => {
+    if (transfers_paused !== undefined) upsert.run('transfer_paused', transfers_paused ? '1' : '0');
+    if (notice_enabled !== undefined) upsert.run('transfer_notice_enabled', notice_enabled ? '1' : '0');
+    if (notice_title !== undefined) upsert.run('transfer_notice_title', String(notice_title).slice(0, 120));
+    if (notice_message !== undefined) upsert.run('transfer_notice_message', String(notice_message).slice(0, 500));
+    if (notice_type !== undefined) upsert.run('transfer_notice_type', String(notice_type).slice(0, 20));
+  });
+  return getTransferSettings();
+}
+
 // ---------- helpers ----------
 function hashPassword(pw) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -259,4 +290,5 @@ function ensureAdmin() {
 module.exports = {
   db, tx, BankError, hashPassword, verifyPassword, newAccountNumber, newReference, randomDigits,
   postTransaction, audit, ensureAdmin, isCredit, ACCOUNT_TYPES,
+  getTransferSettings, setTransferSettings,
 };

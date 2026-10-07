@@ -76,7 +76,7 @@
           </div>
           <div class="stack">
             <div class="card"><div class="card-head"><h3>Quick actions</h3></div>
-              <div class="actions"><a class="btn btn-sm" href="#/transfer">${icon('transfer', 16)} Transfer</a><a class="btn btn-sm btn-ghost" href="#/billpay">${icon('bill', 16)} Pay a bill</a><a class="btn btn-sm btn-ghost" href="#/cards">${icon('card', 16)} Cards</a></div></div>
+              <div class="actions"><a class="btn btn-sm" href="#/transfer">${icon('transfer', 16)} Transfer</a><a class="btn btn-sm btn-ghost" href="#/transfer?mode=external">${icon('download', 16)} Withdraw / Send</a><a class="btn btn-sm btn-ghost" href="#/billpay">${icon('bill', 16)} Pay a bill</a><a class="btn btn-sm btn-ghost" href="#/cards">${icon('card', 16)} Cards</a></div></div>
             <div class="card"><div class="card-head"><h3>Spending · last 30 days</h3></div>
               ${spendRows.length ? `<div class="bars">${spendRows.map(([c, v]) => `<div class="bar-row" title="${esc(c)}: ${money(v)}"><span style="text-transform:capitalize">${esc(c)}</span>
                 <div class="bar-track"><div class="bar-fill" style="width:${Math.max(3, (v / maxSpend) * 100)}%"></div></div><span class="num" style="text-align:right">${money(v)}</span></div>`).join('')}</div>`
@@ -112,8 +112,12 @@
           <div class="kpi"><div class="l">Account number</div><div class="v num" style="font-size:20px">${esc(a.number)}</div><div class="s">Routing 021000555 · <span class="badge ${a.status === 'active' ? 'good' : 'warn'}">${esc(a.status)}</span></div></div>
         </div>
         <div class="card"><div class="card-head"><h2>Transactions</h2>
-          <div class="actions"><input type="search" id="txSearch" placeholder="Search transactions" style="width:220px;padding:7px 12px">
-          <a class="btn btn-sm btn-ghost" href="/api/accounts/${a.id}/statement.csv">${icon('download', 16)} Statement (CSV)</a></div></div>
+          <div class="actions">
+            ${!['cd', 'loan'].includes(a.type) ? `<a class="btn btn-sm btn-ghost" href="#/transfer?from=${a.id}">${icon('transfer', 16)} Transfer</a>` : ''}
+            ${!['cd', 'loan', 'credit_card'].includes(a.type) ? `<a class="btn btn-sm btn-ghost" href="#/transfer?from=${a.id}&mode=external">${icon('download', 16)} Withdraw / Send</a>` : ''}
+            <input type="search" id="txSearch" placeholder="Search transactions" style="width:180px;padding:7px 12px">
+            <a class="btn btn-sm btn-ghost" href="/api/accounts/${a.id}/statement.csv">${icon('download', 16)} Statement</a>
+          </div></div>
           <div id="txBox">${txTable(transactions, false, more)}</div></div>`;
 
       // "Show more" pages through older transactions; search runs on the server across the whole history.
@@ -164,57 +168,303 @@
     },
 
     async transfer() {
-      await refreshAccounts();
+      const [{ }, tSettings] = await Promise.all([
+        refreshAccounts(),
+        api('/api/transfer-settings').catch(() => ({ transfers_paused: false, notice_enabled: false })),
+      ]);
       const from = debitable().filter((a) => a.type !== 'credit_card');
+      const hashPart = location.hash.split('?')[1] || '';
+      const params = new URLSearchParams(hashPart);
+      let mode = params.get('mode') === 'external' ? 'external' : 'own';
+      const prefillFrom = params.get('from');
+
+      // Popup notice modal
+      const showNoticeModal = (forced = false) => {
+        if (tSettings.transfers_paused) {
+          modal({
+            title: tSettings.notice_title || 'Transfers Temporarily Paused',
+            submitText: 'Close',
+            body: `<div style="padding:10px 0;text-align:center">
+              <div style="font-size:36px;margin-bottom:8px">⛔</div>
+              <h4 style="color:var(--down);margin-bottom:8px">Transfers &amp; Withdrawals are Paused</h4>
+              <p style="color:var(--ink-2);font-size:15px;line-height:1.5">${esc(tSettings.notice_message || 'Transfers and withdrawals are temporarily paused by bank administration. Please try again later or contact customer support.')}</p>
+            </div>`,
+            onSubmit: () => {},
+          });
+          return true;
+        }
+        if (tSettings.notice_enabled && (forced || !sessionStorage.getItem('cb_notice_seen'))) {
+          sessionStorage.setItem('cb_notice_seen', '1');
+          modal({
+            title: tSettings.notice_title || 'Important Notice',
+            submitText: 'Acknowledge & Continue',
+            body: `<div style="padding:6px 0">
+              <div class="badge ${tSettings.notice_type === 'paused' ? 'bad' : tSettings.notice_type === 'warning' ? 'warn' : 'info'}" style="margin-bottom:12px;font-size:12px;text-transform:uppercase">
+                ${tSettings.notice_type || 'Notice'}
+              </div>
+              <p style="font-size:15px;line-height:1.6;color:var(--ink)">${esc(tSettings.notice_message)}</p>
+            </div>`,
+            onSubmit: () => {},
+          });
+          return true;
+        }
+        return false;
+      };
+
+      showNoticeModal();
+
       page.innerHTML = `
+        ${tSettings.transfers_paused ? `
+        <div style="background:#fcebeb;border:1px solid #f7c3c3;color:#9e1b1b;border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:16px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:24px">⛔</span>
+            <div><b>Transfers &amp; Withdrawals are Paused</b><div style="font-size:14px;margin-top:2px;color:#7a1414">${esc(tSettings.notice_message)}</div></div>
+          </div>
+          <button type="button" class="btn btn-sm btn-danger" id="bannerNoticeBtn">View details</button>
+        </div>` : ''}
+
         <div class="two-col">
           <div class="card">
-            <div class="card-head"><h2>Move money</h2><div class="tabs" id="tTabs"><button class="on" data-m="own">Between my accounts</button><button data-m="other">To another customer</button></div></div>
+            <div class="card-head">
+              <h2>Move money &amp; transfers</h2>
+              <div class="tabs" id="tTabs">
+                <button class="${mode === 'own' ? 'on' : ''}" data-m="own">Between my accounts</button>
+                <button class="${mode === 'other' ? 'on' : ''}" data-m="other">To CapitalBridge customer</button>
+                <button class="${mode === 'external' ? 'on' : ''}" data-m="external">To another bank (ACH / Wire)</button>
+              </div>
+            </div>
             <form id="tForm">
               <div class="form-error"></div>
-              <div class="field"><label>From</label><select name="fromId" required>${from.map(acctOpt).join('')}</select></div>
-              <div class="field" id="toOwn"><label>To</label><select name="toId">${accounts.filter((a) => a.status === 'active' && !['cd', 'investment'].includes(a.type)).map(acctOpt).join('')}</select></div>
-              <div class="field" id="toOther" style="display:none"><label>Recipient's CapitalBridge account number</label><input name="toNumber" inputmode="numeric" placeholder="12-digit account number"></div>
-              <div class="grid-2"><div class="field"><label>Amount (USD)</label><input name="amount" type="number" step="0.01" min="0.01" required placeholder="0.00"></div>
-              <div class="field"><label>Memo (optional)</label><input name="memo" maxlength="120"></div></div>
-              <button class="btn" type="submit">Review transfer</button>
+              
+              <div class="field">
+                <label>From account</label>
+                <select name="fromId" required>
+                  ${from.map((a) => `<option value="${a.id}" ${prefillFrom == a.id ? 'selected' : ''}>${esc(acctName(a))} ${a.masked} (${money(a.balance)})</option>`).join('')}
+                </select>
+              </div>
+
+              <!-- Own Accounts -->
+              <div class="field" id="toOwn" style="${mode === 'own' ? '' : 'display:none'}">
+                <label>To my account</label>
+                <select name="toId">
+                  ${accounts.filter((a) => a.status === 'active' && !['cd', 'investment'].includes(a.type)).map(acctOpt).join('')}
+                </select>
+              </div>
+
+              <!-- Other CapitalBridge Customer -->
+              <div class="field" id="toOther" style="${mode === 'other' ? '' : 'display:none'}">
+                <label>Recipient's CapitalBridge account number</label>
+                <input name="toNumber" inputmode="numeric" placeholder="12-digit account number (e.g. 472963261025)">
+              </div>
+
+              <!-- External Bank Transfer -->
+              <div id="toExternal" style="${mode === 'external' ? '' : 'display:none'}">
+                <div class="field">
+                  <label>Destination bank</label>
+                  <select name="recipientBankSelect" id="extBankSelect">
+                    <option value="">Select destination bank...</option>
+                    <option value="JPMorgan Chase" data-routing="021000021">JPMorgan Chase</option>
+                    <option value="Bank of America" data-routing="026009593">Bank of America</option>
+                    <option value="Wells Fargo" data-routing="121000247">Wells Fargo</option>
+                    <option value="Citibank" data-routing="021000089">Citibank</option>
+                    <option value="Capital One" data-routing="051405515">Capital One</option>
+                    <option value="PNC Bank" data-routing="043000096">PNC Bank</option>
+                    <option value="U.S. Bank" data-routing="091000022">U.S. Bank</option>
+                    <option value="TD Bank" data-routing="031201360">TD Bank</option>
+                    <option value="other">Other bank or credit union...</option>
+                  </select>
+                </div>
+                <div class="field" id="extBankOtherField" style="display:none">
+                  <label>Bank name</label>
+                  <input name="recipientBankOther" maxlength="80" placeholder="e.g. Regions Bank, Navy Federal">
+                </div>
+                <div class="grid-2">
+                  <div class="field">
+                    <label>Routing number (9 digits)</label>
+                    <input name="routingNumber" id="extRoutingInput" maxlength="9" inputmode="numeric" placeholder="e.g. 021000021">
+                  </div>
+                  <div class="field">
+                    <label>Account type</label>
+                    <select name="accountType">
+                      <option value="checking">Checking</option>
+                      <option value="savings">Savings</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="grid-2">
+                  <div class="field">
+                    <label>Recipient account number</label>
+                    <input name="accountNumber" maxlength="24" inputmode="numeric" placeholder="Account number">
+                  </div>
+                  <div class="field">
+                    <label>Confirm account number</label>
+                    <input name="confirmAccount" maxlength="24" inputmode="numeric" placeholder="Re-type account number">
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Recipient name (person or business)</label>
+                  <input name="recipientName" maxlength="80" placeholder="e.g. John Doe or Summit LLC">
+                </div>
+                <div class="field">
+                  <label>Transfer method &amp; speed</label>
+                  <select name="speed">
+                    <option value="standard">Standard ACH (1–2 business days · Free)</option>
+                    <option value="wire">Domestic Wire (Same-day delivery · Priority)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="grid-2">
+                <div class="field"><label>Amount (USD)</label><input name="amount" type="number" step="0.01" min="0.01" required placeholder="0.00"></div>
+                <div class="field"><label>Memo (optional)</label><input name="memo" maxlength="120" placeholder="What's this for?"></div>
+              </div>
+
+              <button class="btn btn-gold" type="submit" id="submitTransferBtn" ${tSettings.transfers_paused ? 'disabled' : ''}>
+                ${tSettings.transfers_paused ? 'Transfers Paused' : 'Review transfer'}
+              </button>
             </form>
           </div>
-          <div class="card"><div class="card-head"><h3>Good to know</h3></div>
-            <p class="small muted">Transfers between CapitalBridge accounts are instant and free, 24/7.</p>
-            <p class="small muted">Paying a credit card or loan from checking reduces the balance owed.</p>
-            <p class="small muted">${icon('shield', 14)} Only send money to people you know. CapitalBridge will never ask you to move money to "protect" it.</p></div>
+          <div class="card">
+            <div class="card-head"><h3>Good to know</h3></div>
+            <p class="small muted"><b>Internal transfers:</b> Transfers between your CapitalBridge accounts or to other CapitalBridge members are instant and free, 24/7.</p>
+            <p class="small muted"><b>External bank transfers:</b> Standard ACH transfers clear within 1–2 business days. Domestic wire transfers process on the same business day.</p>
+            <p class="small muted"><b>Verification:</b> Always confirm the 9-digit ABA routing number and recipient account number before dispatching external wires.</p>
+            <p class="small muted">${icon('shield', 14)} CapitalBridge will never contact you asking you to transfer funds to "protect" or "secure" your account.</p>
+          </div>
         </div>`;
-      let mode = 'own';
+
+      $('#bannerNoticeBtn')?.addEventListener('click', () => showNoticeModal(true));
+
+      // Tab switching
       $('#tTabs').addEventListener('click', (e) => {
         const b = e.target.closest('button'); if (!b) return;
         mode = b.dataset.m;
         $('#tTabs').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
         $('#toOwn').style.display = mode === 'own' ? '' : 'none';
-        $('#toOther').style.display = mode === 'own' ? 'none' : '';
+        $('#toOther').style.display = mode === 'other' ? '' : 'none';
+        $('#toExternal').style.display = mode === 'external' ? '' : 'none';
       });
+
+      // Bank select auto routing
+      const bankSel = $('#extBankSelect');
+      const routingInput = $('#extRoutingInput');
+      const bankOtherField = $('#extBankOtherField');
+      if (bankSel) {
+        bankSel.addEventListener('change', () => {
+          const opt = bankSel.options[bankSel.selectedIndex];
+          if (bankSel.value === 'other') {
+            bankOtherField.style.display = '';
+            routingInput.value = '';
+          } else {
+            bankOtherField.style.display = 'none';
+            if (opt && opt.dataset.routing) routingInput.value = opt.dataset.routing;
+          }
+        });
+      }
+
+      // Form submission
       $('#tForm').addEventListener('submit', (e) => {
         e.preventDefault();
+        const err = e.target.querySelector('.form-error'); err.classList.remove('show');
+
+        // Check if transfers paused
+        if (tSettings.transfers_paused) {
+          showNoticeModal(true);
+          return;
+        }
+
         const f = formData(e.target);
-        const body = { fromId: f.fromId, amount: f.amount, memo: f.memo, ...(mode === 'own' ? { toId: f.toId } : { toNumber: f.toNumber }) };
+        if (!(+f.amount > 0)) { err.textContent = 'Enter an amount greater than $0.00'; err.classList.add('show'); return; }
+
+        let body = { fromId: f.fromId, amount: f.amount, memo: f.memo, type: mode };
+        let toLabel = '';
+        let deliveryLabel = 'Instant';
+
+        if (mode === 'own') {
+          body.toId = f.toId;
+          const ta = accounts.find((a) => a.id == f.toId);
+          toLabel = ta ? `${esc(acctName(ta))} ${ta.masked}` : 'Own account';
+        } else if (mode === 'other') {
+          if (!f.toNumber || f.toNumber.trim().length < 8) {
+            err.textContent = 'Enter a valid recipient account number';
+            err.classList.add('show');
+            return;
+          }
+          body.toNumber = f.toNumber;
+          toLabel = `CapitalBridge Account ••${esc(f.toNumber.slice(-4))}`;
+        } else if (mode === 'external') {
+          const bankName = f.recipientBankSelect === 'other' ? (f.recipientBankOther || '').trim() : f.recipientBankSelect;
+          if (!bankName) { err.textContent = 'Select or enter recipient destination bank'; err.classList.add('show'); return; }
+          if (!/^\d{9}$/.test((f.routingNumber || '').trim())) { err.textContent = 'Routing number must be exactly 9 digits'; err.classList.add('show'); return; }
+          if (!f.accountNumber || f.accountNumber.trim().length < 4) { err.textContent = 'Enter a valid recipient account number'; err.classList.add('show'); return; }
+          if (f.accountNumber.trim() !== (f.confirmAccount || '').trim()) { err.textContent = 'Account numbers do not match'; err.classList.add('show'); return; }
+          if (!f.recipientName || !f.recipientName.trim()) { err.textContent = 'Enter the recipient full or business name'; err.classList.add('show'); return; }
+
+          body = {
+            ...body,
+            recipientBank: bankName,
+            routingNumber: f.routingNumber.trim(),
+            accountNumber: f.accountNumber.trim(),
+            recipientName: f.recipientName.trim(),
+            accountType: f.accountType,
+            speed: f.speed,
+          };
+          toLabel = `${esc(bankName)} ••${esc(f.accountNumber.slice(-4))} (${esc(f.recipientName)})`;
+          deliveryLabel = f.speed === 'wire' ? 'Same-day Wire' : '1–2 Business Days (ACH)';
+        }
+
         const fa = accounts.find((a) => a.id == f.fromId);
-        const ta = mode === 'own' ? accounts.find((a) => a.id == f.toId) : null;
-        const err = e.target.querySelector('.form-error');
-        if (!(+f.amount > 0)) { err.textContent = 'Enter an amount'; err.classList.add('show'); return; }
-        err.classList.remove('show');
-        modal({
-          title: 'Confirm transfer', submitText: 'Send ' + money(+f.amount),
-          body: `<div class="detail-grid" style="grid-template-columns:1fr 1fr">
-            <div><div class="k">From</div><div class="v">${esc(acctName(fa))} ${fa.masked}</div></div>
-            <div><div class="k">To</div><div class="v">${ta ? esc(acctName(ta)) + ' ' + ta.masked : 'Account ' + esc(f.toNumber)}</div></div>
-            <div><div class="k">Amount</div><div class="v num">${money(+f.amount)}</div></div>
-            <div><div class="k">Delivery</div><div class="v">Instant</div></div></div>`,
-          onSubmit: async () => {
-            const r = await api('/api/transfers', { body });
-            receipt('Transfer complete', `${money(+f.amount)} sent. Reference ${r.reference}`);
-            views.transfer();
-          },
-        });
+
+        // Open confirm transfer modal
+        const proceedWithConfirmation = () => {
+          modal({
+            title: 'Confirm transfer details',
+            submitText: 'Send ' + money(+f.amount),
+            body: `<div class="detail-grid" style="grid-template-columns:1fr 1fr">
+              <div><div class="k">From</div><div class="v">${esc(acctName(fa))} ${fa.masked}</div></div>
+              <div><div class="k">To destination</div><div class="v">${toLabel}</div></div>
+              <div><div class="k">Amount</div><div class="v num" style="font-size:18px;font-weight:700">${money(+f.amount)}</div></div>
+              <div><div class="k">Estimated delivery</div><div class="v">${deliveryLabel}</div></div>
+              ${f.memo ? `<div style="grid-column:span 2"><div class="k">Memo</div><div class="v">${esc(f.memo)}</div></div>` : ''}
+            </div>`,
+            onSubmit: async () => {
+              const r = await api('/api/transfers', { body });
+              modal({
+                title: 'Transfer dispatched successfully',
+                submitText: 'Done',
+                body: `<div class="receipt" style="text-align:center;padding:12px 0">
+                  <div class="tick" style="margin:0 auto 12px">${icon('check', 32)}</div>
+                  <h3 style="margin-bottom:4px">${money(+f.amount)} Dispatched</h3>
+                  <div class="badge good" style="margin-bottom:14px">Processing · Reference ${esc(r.reference)}</div>
+                  <div class="detail-grid" style="grid-template-columns:1fr 1fr;text-align:left;margin-top:12px">
+                    <div><div class="k">From</div><div class="v">${esc(acctName(fa))} ${fa.masked}</div></div>
+                    <div><div class="k">To</div><div class="v">${toLabel}</div></div>
+                    <div><div class="k">Delivery</div><div class="v">${deliveryLabel}</div></div>
+                    <div><div class="k">Timestamp</div><div class="v">${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div></div>
+                  </div>
+                </div>`,
+                onSubmit: () => { views.transfer(); },
+              });
+            },
+          });
+        };
+
+        // If notice is enabled, show the notice before confirm
+        if (tSettings.notice_enabled) {
+          modal({
+            title: tSettings.notice_title || 'Transfer Notice',
+            submitText: 'Acknowledge & Continue',
+            body: `<div style="padding:6px 0">
+              <div class="badge ${tSettings.notice_type === 'warning' ? 'warn' : 'info'}" style="margin-bottom:12px;font-size:12px;text-transform:uppercase">
+                ${tSettings.notice_type || 'Notice'}
+              </div>
+              <p style="font-size:15px;line-height:1.6;color:var(--ink)">${esc(tSettings.notice_message)}</p>
+            </div>`,
+            onSubmit: () => { proceedWithConfirmation(); },
+          });
+        } else {
+          proceedWithConfirmation();
+        }
       });
     },
 

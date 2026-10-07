@@ -5,6 +5,7 @@ try { process.loadEnvFile(path.join(__dirname, '.env')); } catch { /* no .env fi
 const {
   db, tx, BankError, hashPassword, verifyPassword, newAccountNumber, randomDigits, newReference,
   postTransaction, audit, ensureAdmin, isCredit, ACCOUNT_TYPES,
+  getTransferSettings, setTransferSettings,
 } = require('./db');
 const { getMarket, getNews } = require('./market');
 const chatbot = require('./chatbot');
@@ -341,11 +342,58 @@ const usable = (a, action) => {
   if (action === 'debit' && a.type === 'credit_card' && a.card_locked) throw new BankError('This card is locked');
 };
 
+app.get('/api/transfer-settings', wrap((req, res) => {
+  res.json(getTransferSettings());
+}));
+
 app.post('/api/transfers', requireAuth, requireCustomer, wrap((req, res) => {
+  const settings = getTransferSettings();
+  if (settings.transfers_paused) {
+    throw new BankError(settings.notice_message || 'Transfers and withdrawals are currently paused by administration.', 403);
+  }
   const amount = toCents(req.body.amount);
   const memo = str(req.body.memo, 120);
   const from = myAccount(req, req.body.fromId);
   usable(from, 'debit');
+
+  // External transfer to another bank
+  if (req.body.type === 'external' || req.body.recipientBank) {
+    const recipientBank = str(req.body.recipientBank, 80);
+    const routingNumber = str(req.body.routingNumber, 12).replace(/\D/g, '');
+    const accountNumber = str(req.body.accountNumber, 34).replace(/\D/g, '');
+    const recipientName = str(req.body.recipientName, 80);
+    const accountType = ['checking', 'savings'].includes(req.body.accountType) ? req.body.accountType : 'checking';
+    const speed = req.body.speed === 'wire' ? 'wire' : 'standard';
+
+    if (!recipientBank) throw new BankError('Recipient bank name is required');
+    if (!/^\d{9}$/.test(routingNumber)) throw new BankError('Routing number must be exactly 9 digits');
+    if (!accountNumber || accountNumber.length < 4 || accountNumber.length > 20) throw new BankError('Please enter a valid recipient account number (4–20 digits)');
+    if (!recipientName) throw new BankError('Recipient full or business name is required');
+
+    const prefix = speed === 'wire' ? 'Domestic Wire' : 'ACH Transfer';
+    const desc = `${prefix} to ${recipientBank} ••${accountNumber.slice(-4)} (${recipientName})${memo ? ' – ' + memo : ''}`;
+
+    const result = tx(() => {
+      return postTransaction({
+        accountId: from.id, direction: 'out', amountCents: amount, category: 'transfer', createdBy: req.user.id,
+        description: desc,
+      });
+    });
+    audit(req.user.id, 'external_transfer', `${amount / 100} from ${from.number} to ${recipientBank} ••${accountNumber.slice(-4)} (${recipientName})`);
+    return res.json({
+      ok: true,
+      reference: result.reference,
+      type: 'external',
+      bank: recipientBank,
+      routing: routingNumber,
+      account: `••${accountNumber.slice(-4)}`,
+      recipient: recipientName,
+      speed,
+      amount: amount / 100,
+    });
+  }
+
+  // Internal transfer or between own accounts
   let to;
   if (req.body.toId) to = myAccount(req, req.body.toId);
   else {
@@ -372,7 +420,7 @@ app.post('/api/transfers', requireAuth, requireCustomer, wrap((req, res) => {
     return out;
   });
   audit(req.user.id, 'transfer', `${amount / 100} from ${from.number} to ${to.number}`);
-  res.json({ ok: true, reference: result.reference });
+  res.json({ ok: true, reference: result.reference, type: 'internal', amount: amount / 100 });
 }));
 
 app.get('/api/payees', requireAuth, requireCustomer, (req, res) => {
@@ -751,6 +799,13 @@ admin.delete('/announcements/:id', (req, res) => {
   db.prepare('DELETE FROM announcements WHERE id = ?').run(Number(req.params.id));
   res.json({ ok: true });
 });
+
+admin.get('/transfer-settings', (req, res) => res.json(getTransferSettings()));
+admin.post('/transfer-settings', wrap((req, res) => {
+  const updated = setTransferSettings(req.body);
+  audit(req.user.id, 'update_transfer_settings', updated.transfers_paused ? 'Transfers paused' : 'Transfers active');
+  res.json({ ok: true, settings: updated });
+}));
 
 admin.get('/requests', (req, res) => {
   const status = ['new', 'in_progress', 'closed'].includes(req.query.status) ? req.query.status : null;

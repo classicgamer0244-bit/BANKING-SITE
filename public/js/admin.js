@@ -8,6 +8,7 @@
 
   const NAV = [
     ['dashboard', 'home', 'Dashboard'], ['customers', 'users', 'Customers'], ['transactions', 'list', 'Transactions'],
+    ['transfers', 'transfer', 'Transfer controls'],
     ['care', 'users', 'Customer care chat'], ['requests', 'bill', 'Requests'], ['inbox', 'mail', 'Secure messages'], ['announcements', 'news', 'Announcements'], ['audit', 'shield', 'Audit log'], ['settings', 'user', 'My settings'],
   ];
   const TYPES = Object.keys(TYPE_LABEL);
@@ -241,6 +242,10 @@
             </div>
             <div class="card"><div class="card-head"><h3>Customer messages</h3><a href="#/inbox">Inbox</a></div>
               ${messages.slice(0, 5).map((m) => `<div class="msg ${m.is_read ? '' : 'unread'}" onclick="location.hash='#/customer/${m.user_id}'"><div class="subj">${esc(m.subject)}</div><div class="small muted">${esc(m.first_name)} ${esc(m.last_name)} · ${dateTime(m.created_at)}</div></div>`).join('') || '<div class="empty">No messages.</div>'}
+            </div>
+            <div class="card"><div class="card-head"><h3>Transfer &amp; withdrawal controls</h3><a href="#/transfers">Manage</a></div>
+              <p class="small muted" style="margin-bottom:12px">Pause customer transfers or configure a pop-up notice for transfer and withdrawal actions.</p>
+              <a href="#/transfers" class="btn btn-sm btn-ghost">${icon('transfer', 16)} Open transfer controls</a>
             </div>
           </div>
         </div>`;
@@ -566,6 +571,102 @@
         <div class="table-wrap"><table><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Details</th></tr></thead><tbody>
         ${entries.map((e) => `<tr><td class="muted small" style="white-space:nowrap">${dateTime(e.created_at)}</td><td>${esc(e.username || '—')}</td><td><span class="badge">${esc(e.action.replace(/_/g, ' '))}</span></td><td class="small">${esc(e.details)}</td></tr>`).join('')}
         </tbody></table></div></div>`;
+    },
+
+    async transfers() {
+      const s = await api('/api/admin/transfer-settings');
+      page.innerHTML = `
+        <div class="card" style="max-width:680px">
+          <div class="card-head">
+            <div>
+              <h2>Transfer &amp; Withdrawal Controls</h2>
+              <p class="small muted" style="margin:2px 0 0">Control customer transfer availability, pause transfers bank-wide, and configure notice popups.</p>
+            </div>
+            <span class="badge ${s.transfers_paused ? 'bad' : 'good'}" style="font-size:13px;padding:4px 12px">
+              ${s.transfers_paused ? '⛔ Transfers Paused' : '✓ Active & Normal'}
+            </span>
+          </div>
+          <form id="transferSettingsForm">
+            <div class="form-error"></div>
+            
+            <div style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0">
+              <label class="check" style="font-size:15px;cursor:pointer">
+                <input type="checkbox" name="transfers_paused" ${s.transfers_paused ? 'checked' : ''}>
+                <div>
+                  <b>Pause transfers and withdrawals bank-wide</b>
+                  <div class="small muted">When checked, any customer attempting a transfer or withdrawal will see the popup notice and cannot submit transfers.</div>
+                </div>
+              </label>
+            </div>
+
+            <div style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0">
+              <label class="check" style="font-size:15px;cursor:pointer;margin-bottom:12px">
+                <input type="checkbox" name="notice_enabled" ${s.notice_enabled ? 'checked' : ''}>
+                <div>
+                  <b>Show pop-up notice when transfer or withdrawal is clicked</b>
+                  <div class="small muted">Shows an immediate modal popup dialog to customers when they tap Transfer or enter the move-money page.</div>
+                </div>
+              </label>
+
+              <div class="field" style="margin-top:12px">
+                <label>Notice title</label>
+                <input name="notice_title" value="${esc(s.notice_title)}" maxlength="120" placeholder="e.g. Important Transfer Notice">
+              </div>
+
+              <div class="field">
+                <label>Notice type / styling</label>
+                <select name="notice_type">
+                  <option value="info" ${s.notice_type === 'info' ? 'selected' : ''}>Information (Blue)</option>
+                  <option value="warning" ${s.notice_type === 'warning' ? 'selected' : ''}>Warning / Notice (Gold)</option>
+                  <option value="paused" ${s.notice_type === 'paused' ? 'selected' : ''}>Urgent / Paused (Red)</option>
+                </select>
+              </div>
+
+              <div class="field" style="margin-bottom:0">
+                <label>Notice message for customers</label>
+                <textarea name="notice_message" rows="4" maxlength="500" placeholder="Message shown to customers in the popup modal...">${esc(s.notice_message)}</textarea>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:12px;align-items:center;margin-top:20px">
+              <button class="btn btn-gold" type="submit">Save transfer settings</button>
+              <button type="button" class="btn btn-ghost" id="previewNoticeBtn">Preview pop-up</button>
+            </div>
+          </form>
+        </div>`;
+
+      $('#previewNoticeBtn').onclick = () => {
+        const f = formData($('#transferSettingsForm'));
+        modal({
+          title: f.notice_title || 'Transfer Notice',
+          submitText: 'Close preview',
+          body: `<div style="padding:4px 0">
+            <div class="badge ${f.notice_type === 'paused' ? 'bad' : f.notice_type === 'warning' ? 'warn' : 'info'}" style="margin-bottom:10px">
+              ${f.transfers_paused ? 'Transfers paused' : (f.notice_type || 'info').toUpperCase()}
+            </div>
+            <p style="font-size:15px;line-height:1.6">${esc(f.notice_message || 'No message entered')}</p>
+          </div>`,
+          onSubmit: () => {},
+        });
+      };
+
+      $('#transferSettingsForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const er = e.target.querySelector('.form-error'); er.classList.remove('show');
+        const f = formData(e.target);
+        try {
+          const body = {
+            transfers_paused: !!e.target.transfers_paused.checked,
+            notice_enabled: !!e.target.notice_enabled.checked,
+            notice_title: f.notice_title,
+            notice_message: f.notice_message,
+            notice_type: f.notice_type,
+          };
+          await api('/api/admin/transfer-settings', { body });
+          toast('Transfer controls and notice updated', 'success');
+          views.transfers();
+        } catch (ex) { er.textContent = ex.message; er.classList.add('show'); }
+      });
     },
 
     async settings() {
