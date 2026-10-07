@@ -173,7 +173,7 @@
           <div class="stack">
             <div class="card"><div class="card-head"><h2>Your accounts</h2><a href="#/accounts">View all</a></div>
               <div class="acct-list">${accounts.length ? accounts.map(acctTile).join('') : '<div class="empty">No accounts yet. Contact the bank to open one.</div>'}</div></div>
-            <div class="card"><div class="card-head"><h2>Recent activity</h2><a href="#/activity">View all activity</a></div>${txTable(transactions.slice(0, 10), true)}
+            <div class="card"><div class="card-head"><h2>Recent activity</h2></div>${txTable(transactions.slice(0, 10), true)}
               ${transactions.length > 10 ? '<div class="show-more"><a class="btn btn-ghost btn-sm" href="#/activity">View all activity</a></div>' : ''}</div>
           </div>
           <div class="stack">
