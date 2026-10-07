@@ -147,7 +147,7 @@ function planAccount(type, targetCents, fromMs, toMs, extra = 0) {
 }
 
 // Turn planned events into posted rows: solve the opening entry and fix balances so nothing goes negative.
-function settle(type, targetCents, fromMs, toMs, plan) {
+function settle(type, targetCents, fromMs, toMs, plan, openMs = fromMs + 7 * 3600 * 1000) {
   const { credit, ev } = plan;
   const sign = (e) => (e.dir === 'in' ? 1 : -1) * (credit ? -1 : 1);
 
@@ -159,7 +159,46 @@ function settle(type, targetCents, fromMs, toMs, plan) {
     }
   }
   const real = ev.filter((e) => e.cents > 0 || e.interest);
+  for (const e of real) if (e.time <= openMs) e.time = openMs + crypto.randomInt(1, 60) * 60_000; // nothing before the account opens
   const netOf = (list) => list.reduce((s, e) => s + (e.interest ? 0 : sign(e) * e.cents), 0);
+  const closing = toMs + 21.5 * 3600 * 1000; // after every regular event (8am–9pm) on the last day
+  const span = Math.max(0, Math.floor((toMs - fromMs) / DAY));
+  const someday = () => randomTime(fromMs + crypto.randomInt(0, span + 1) * DAY);
+
+  // Everyday deposit accounts open with a small deposit (under $100) and reach the target through
+  // their activity. Loans start with the principal and CDs with their lump sum, as they do in real life.
+  if (!credit && type !== 'cd') {
+    const opening = cents(rnd(25, 99.99));
+    const need = targetCents - opening - netOf(real);
+    if (need > 0) {
+      // Short of the target: add incoming deposits spread over the range (bigger ones for bigger gaps).
+      const chunk = need > 2_000_000 ? rnd(1_500_000, 6_000_000) : need > 300_000 ? rnd(200_000, 900_000) : rnd(30_000, 150_000);
+      for (const [amt, desc] of splitInto(need, Math.min(60, Math.max(1, Math.ceil(need / chunk))), depositLabel)) real.push({ time: someday(), dir: 'in', cents: amt, category: 'deposit', description: desc });
+    } else if (need < 0) {
+      // Activity would overshoot: move the excess out in a few transfers along the way.
+      for (const [amt] of splitInto(-need, Math.min(12, Math.max(1, Math.ceil(-need / 150_000))))) real.push({ time: someday(), dir: 'out', cents: amt, category: 'transfer', description: pick(['Transfer to external account', 'Online transfer to savings at another bank', 'Transfer to Bridge Checking']) });
+    }
+    // If spending ever runs ahead of deposits, bring money in just before the dip (as people do)
+    // and send the same amount back out at the end, so the ending balance stays on target.
+    let lifted = 0;
+    for (let guard = 0; guard < 60; guard++) {
+      real.sort((a, b) => a.time - b.time);
+      // Find the first point the balance goes negative and the lowest it gets from there on.
+      let bal = opening, dipAt = -1, worst = 0;
+      real.forEach((e, i) => {
+        bal += e.interest ? 0 : sign(e) * e.cents;
+        if (bal < 0 && dipAt === -1) dipAt = i;
+        if (dipAt !== -1) worst = Math.min(worst, bal);
+      });
+      if (dipAt === -1) break;
+      const amt = -worst + cents(rnd(40, 400)); // covers the worst point, with a little to spare
+      real.push({ time: Math.max(openMs + 60_000, real[dipAt].time - crypto.randomInt(1, 6) * 3600 * 1000), dir: 'in', cents: amt, category: 'transfer',
+        description: pick(['Transfer from Bridge Savings', 'Mobile check deposit', 'Transfer from external account']) });
+      lifted += amt;
+    }
+    if (lifted) real.push({ time: closing, dir: 'out', cents: lifted, category: 'transfer', description: 'Transfer to Bridge Savings' });
+    return finishRows(type, credit, opening, real, targetCents, openMs, closing, sign);
+  }
 
   // Opening entry = target − net activity, so the account ends exactly on target.
   let opening = targetCents - netOf(real);
@@ -178,9 +217,7 @@ function settle(type, targetCents, fromMs, toMs, plan) {
   real.sort((a, b) => a.time - b.time);
   let bal = opening, min = opening;
   for (const e of real) { bal += e.interest ? 0 : sign(e) * e.cents; min = Math.min(min, bal); }
-  // Events fall between 8am and 9pm; the closing entries go after them on the last day.
-  const closing = toMs + 21.5 * 3600 * 1000;
-  const floor = credit ? 0 : 2500; // deposit accounts keep ~$25 headroom; owed balances just stay ≥ 0
+  const floor = credit ? 0 : 2500; // CDs keep ~$25 headroom; owed balances just stay ≥ 0
   if (min < floor) {
     const lift = floor - min + cents(rnd(50, 300));
     opening += lift;
@@ -188,13 +225,30 @@ function settle(type, targetCents, fromMs, toMs, plan) {
       ? { time: closing, dir: 'in', cents: lift, category: 'payment', description: 'Payment – thank you' }
       : { time: closing, dir: 'out', cents: lift, category: 'transfer', description: 'Transfer to external account' });
   }
+  return finishRows(type, credit, opening, real, targetCents, openMs, closing, sign);
+}
 
-  // Post rows in date order; interest is a tiny amount based on the running balance.
+// Splits an amount (cents) into n random parts that add up exactly; label(part) names each one.
+function splitInto(total, n, label = () => '') {
+  const w = Array.from({ length: n }, () => rnd(0.4, 1.6));
+  const sum = w.reduce((s, x) => s + x, 0);
+  const parts = w.map((x) => Math.max(1, Math.floor(total * x / sum)));
+  parts[n - 1] += total - parts.reduce((s, x) => s + x, 0);
+  return parts.filter((p) => p > 0).map((p) => [p, label(p)]);
+}
+const depositLabel = (c) => (c >= 500_000
+  ? pick(['Wire transfer – incoming', 'ACH credit – brokerage transfer', 'Transfer from external account', 'Wire transfer – incoming'])
+  : pick(['Mobile check deposit', 'Transfer from external account', 'Cash deposit – Bridge financial center', 'Check deposit – Bridge financial center', 'Tax refund – IRS TREAS 310']));
+
+// Post rows in date order after the opening entry; interest is a tiny amount based on the running balance.
+function finishRows(type, credit, opening, real, targetCents, openMs, closing, sign) {
   const apy = { savings: 0.0001, money_market: 0.0002, cd: 0.0003 }[type] || 0;
-  const rows = [{ time: fromMs + 7 * 3600 * 1000, dir: credit ? 'out' : 'in', cents: opening, category: credit ? (type === 'loan' ? 'loan' : 'adjustment') : 'deposit',
+  const rows = [{ time: openMs, dir: credit ? 'out' : 'in', cents: opening, category: credit ? (type === 'loan' ? 'loan' : 'adjustment') : 'deposit',
     description: type === 'loan' ? 'Loan disbursement – principal' : credit ? 'Balance transfer' : 'Opening deposit' }];
+  // Nothing happens before the account exists (matters when accounts open hours apart on one day).
+  for (const e of real) if (e.time <= openMs) e.time = openMs + crypto.randomInt(1, 60) * 60_000;
   real.sort((a, b) => a.time - b.time);
-  bal = opening;
+  let bal = opening;
   for (const e of real) {
     if (e.interest) e.cents = Math.max(1, Math.round(bal * apy / 12));
     bal += sign(e) * e.cents;
@@ -217,33 +271,50 @@ const MIN_TRANSACTIONS = 40;
 const TOP_UP_ORDER = ['checking', 'credit_card', 'savings', 'money_market', 'investment', 'loan', 'cd'];
 
 function generateHistory(db, { userId, fromMs, toMs, holdings, newAccountNumber, randomDigits, newReference, actorId }) {
+  // The main account (checking if there is one) opens on the From date; the others open on their
+  // own later dates within the first part of the range, so accounts aren't all opened at once.
+  const types = Object.keys(holdings).sort((a, b) => TOP_UP_ORDER.indexOf(a) - TOP_UP_ORDER.indexOf(b));
+  const span = Math.max(0, Math.floor((toMs - fromMs) / DAY));
+  // Each account gets its own opening day when the range has room (within its first ~40%);
+  // otherwise accounts share a day but open a couple of hours apart.
+  const maxOffset = Math.min(span, Math.max(types.length - 1, Math.floor(span * 0.4)));
+  const freeDays = Array.from({ length: maxOffset }, (_, i) => i + 1).sort(() => Math.random() - 0.5);
+  const openOf = {};
+  types.forEach((t, i) => {
+    if (i === 0) { openOf[t] = { dayMs: fromMs, timeMs: fromMs + 7 * 3600 * 1000 }; return; }
+    const dayMs = freeDays.length ? fromMs + freeDays.pop() * DAY : fromMs + crypto.randomInt(0, span + 1) * DAY;
+    const sameDayAsOthers = Object.values(openOf).filter((o) => o.dayMs === dayMs).length;
+    openOf[t] = { dayMs, timeMs: dayMs + 7 * 3600 * 1000 + sameDayAsOthers * crypto.randomInt(45, 100) * 60_000 };
+  });
+
   // Plan every account first so the customer's total can be checked before anything is saved.
   const plans = [];
-  for (const [type, dollars] of Object.entries(holdings)) {
-    const targetCents = Math.round(Number(dollars) * 100);
+  for (const type of types) {
+    const targetCents = Math.round(Number(holdings[type]) * 100);
     if (!Number.isFinite(targetCents) || targetCents < 0) continue;
-    const plan = planAccount(type, targetCents, fromMs, toMs);
-    plans.push({ type, targetCents, plan, rows: settle(type, targetCents, fromMs, toMs, plan) });
+    const { dayMs, timeMs: openMs } = openOf[type];
+    const plan = planAccount(type, targetCents, dayMs, toMs);
+    plans.push({ type, targetCents, dayMs, openMs, plan, rows: settle(type, targetCents, dayMs, toMs, plan, openMs) });
   }
-  const primary = plans.slice().sort((a, b) => TOP_UP_ORDER.indexOf(a.type) - TOP_UP_ORDER.indexOf(b.type))[0];
+  const primary = plans[0];
   for (let tries = 0; primary && tries < 8; tries++) {
     const total = plans.reduce((s, p) => s + p.rows.length, 0);
     if (total >= MIN_TRANSACTIONS) break;
     const extra = (primary.extra || 0) + (MIN_TRANSACTIONS - total) + crypto.randomInt(2, 9);
     primary.extra = extra;
-    primary.plan = planAccount(primary.type, primary.targetCents, fromMs, toMs, extra);
-    primary.rows = settle(primary.type, primary.targetCents, fromMs, toMs, primary.plan);
+    primary.plan = planAccount(primary.type, primary.targetCents, primary.dayMs, toMs, extra);
+    primary.rows = settle(primary.type, primary.targetCents, primary.dayMs, toMs, primary.plan, primary.openMs);
   }
 
   const created = [];
-  for (const { type, targetCents, plan, rows } of plans) {
+  for (const { type, targetCents, openMs, plan, rows } of plans) {
     const hasCard = type === 'checking' || type === 'credit_card';
     const credit = plan.credit;
     const limit = type === 'credit_card' ? Math.max(500000, Math.ceil(targetCents * 2 / 100000) * 100000) : 0;
     const rate = { checking: 0.01, savings: 0.01, money_market: targetCents >= 2_500_000 ? 0.03 : targetCents >= 1_000_000 ? 0.02 : 0.01, cd: 0.03, credit_card: 21.99, loan: 9.49 }[type] || 0;
     const number = newAccountNumber(), cardLast4 = hasCard ? randomDigits(4) : '';
     const acct = db.prepare(`INSERT INTO accounts (user_id, type, number, credit_limit_cents, rate, card_last4, opened_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(userId, type, number, limit, rate, cardLast4, at(fromMs));
+      .run(userId, type, number, limit, rate, cardLast4, at(openMs));
     const accountId = Number(acct.lastInsertRowid);
     let bal = 0;
     const ins = db.prepare(`INSERT INTO transactions (account_id, direction, amount_cents, balance_after, category, description, reference, created_by, created_at)
@@ -253,7 +324,7 @@ function generateHistory(db, { userId, fromMs, toMs, holdings, newAccountNumber,
       ins.run(accountId, r.dir, r.cents, bal, r.category, r.description, newReference(), actorId, at(r.time));
     }
     db.prepare('UPDATE accounts SET balance_cents = ? WHERE id = ?').run(bal, accountId);
-    created.push({ type, accountId, number, card_last4: cardLast4, transactions: rows.length, balance: bal / 100 });
+    created.push({ type, accountId, number, card_last4: cardLast4, openMs, transactions: rows.length, balance: bal / 100 });
   }
   return created;
 }
@@ -283,15 +354,21 @@ function generateMessages(db, { userId, firstName, fromMs, toMs, accounts }) {
   const types = new Set(accounts.map((a) => a.type));
   const ending = (a) => `${ACCOUNT_NAME[a.type] || a.type} ending in ${a.number.slice(-4)}`;
   const t0 = fromMs + 9 * 3600 * 1000;
+  const openDay = (a) => Math.floor((a.openMs ?? fromMs) / DAY);
+  const firstDay = accounts.filter((a) => openDay(a) === Math.floor(fromMs / DAY));
+  const openedBy = (time) => accounts.filter((a) => (a.openMs ?? fromMs) <= time);
 
   add(t0, 'Welcome to CapitalBridge Bank',
-    `Hi ${firstName}, welcome to CapitalBridge! Your accounts are open and ready:\n${accounts.map((a) => `• ${ending(a)}`).join('\n')}\n\nFor your security, never share your password, PIN or one-time passcode. CapitalBridge will never ask for them by phone, text or email.`);
+    `Hi ${firstName}, welcome to CapitalBridge! Your ${firstDay.length > 1 ? 'accounts are' : 'account is'} open and ready:\n${firstDay.map((a) => `• ${ending(a)}`).join('\n')}\n\nFor your security, never share your password, PIN or one-time passcode. CapitalBridge will never ask for them by phone, text or email.`);
   for (const a of accounts) {
-    if (a.type === 'checking') add(randomTime(fromMs + crypto.randomInt(1, 4) * DAY), 'Your debit card is on its way',
+    const opened = (a.openMs ?? fromMs) + 9 * 3600 * 1000;
+    if (!firstDay.includes(a)) add(opened + crypto.randomInt(10, 90) * 60_000, `Your new ${ACCOUNT_NAME[a.type] || a.type} is open`,
+      `Hi ${firstName}, your ${ending(a)} is now open and ready to use. You'll see it alongside your other CapitalBridge accounts in Online Banking.`);
+    if (a.type === 'checking') add(randomTime(opened + crypto.randomInt(1, 4) * DAY), 'Your debit card is on its way',
       `Your Bridge debit card ending in ${a.card_last4} has shipped and should arrive within 7–10 business days. Once it arrives, you can start using it right away — and you can lock it any time from Cards in Online Banking.`);
-    if (a.type === 'credit_card') add(randomTime(fromMs + crypto.randomInt(1, 5) * DAY), 'Your Bridge Rewards Card has shipped',
+    if (a.type === 'credit_card') add(randomTime(opened + crypto.randomInt(1, 5) * DAY), 'Your Bridge Rewards Card has shipped',
       `Good news, ${firstName} — your Bridge Rewards Card ending in ${a.card_last4} is in the mail. You'll earn 3% cash back on dining and travel, 2% at grocery stores and 1% on everything else.`);
-    if (a.type === 'loan') add(t0 + 3600 * 1000, 'Your personal loan has been funded',
+    if (a.type === 'loan') add(opened + 3600 * 1000, 'Your personal loan has been funded',
       `Your personal loan (${ending(a)}) has been funded. Payments are set up on autopay around the 5th of each month. You can pay extra toward principal any time with no prepayment penalty.`);
   }
   add(randomTime(fromMs + crypto.randomInt(4, 9) * DAY), 'You’re enrolled in paperless statements',
@@ -306,8 +383,10 @@ function generateMessages(db, { userId, firstName, fromMs, toMs, accounts }) {
     const quarterly = first < recent;
     if (quarterly && d.getUTCMonth() % 3 !== 0) continue;
     const prev = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-    add(randomTime(first + crypto.randomInt(1, 4) * DAY), `Your ${prev} statement${accounts.length > 1 ? 's are' : ' is'} ready`,
-      `Your ${prev} statement${accounts.length > 1 ? 's are' : ' is'} now available in Online Banking:\n${accounts.map((a) => `• ${ending(a)}`).join('\n')}\n\nOpen any account and choose “Statement” to download.`);
+    const open = openedBy(first);
+    if (!open.length) continue;
+    add(randomTime(first + crypto.randomInt(1, 4) * DAY), `Your ${prev} statement${open.length > 1 ? 's are' : ' is'} ready`,
+      `Your ${prev} statement${open.length > 1 ? 's are' : ' is'} now available in Online Banking:\n${open.map((a) => `• ${ending(a)}`).join('\n')}\n\nOpen any account and choose “Statement” to download.`);
   }
   // Security reminders every 5–8 months.
   for (let t = fromMs + crypto.randomInt(120, 200) * DAY; t <= toMs; t += crypto.randomInt(150, 240) * DAY) {
