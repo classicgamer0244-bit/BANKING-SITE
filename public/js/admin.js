@@ -117,12 +117,16 @@
         <label class="check small" style="margin-bottom:16px"><input type="checkbox" name="must_change_pw" checked> Require password change at first sign-in</label>
         ${config.demo ? `
         <div class="sample-box">
-          <label class="check" style="margin:0 0 4px"><input type="checkbox" name="with_sample"> <b>Generate sample account history</b> <span class="badge warn">Demo mode</span></label>
-          <p class="small muted" style="margin:0 0 12px">Opens each account you give an amount for and fills it with realistic activity between the two dates, ending exactly at that amount. Leave an account blank to skip it.</p>
-          <div data-sample-fields style="display:none">
-            <div class="grid-2"><div class="field"><label>From</label><input type="date" name="s_from" max="${new Date().toISOString().slice(0, 10)}"></div>
+          <label class="check" style="margin:0 0 4px"><input type="checkbox" name="with_sample" checked> <b>Generate accounts &amp; history</b> <span class="badge warn">Demo mode</span></label>
+          <p class="small muted" style="margin:0 0 12px">Enter the total deposits and the dates. Accounts, card numbers, transactions and messages are generated automatically — the total is split across checking, savings and (for larger amounts) money market and investment.</p>
+          <div data-sample-fields>
+            <div class="grid-3"><div class="field"><label>Total deposits ($)</label><input type="number" name="s_total" min="0.01" step="0.01" placeholder="e.g. 85000"></div>
+              <div class="field"><label>From</label><input type="date" name="s_from" max="${new Date().toISOString().slice(0, 10)}"></div>
               <div class="field"><label>To</label><input type="date" name="s_to" max="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}"></div></div>
-            <div class="grid-3">${SAMPLE_FIELDS.map(([k, l]) => `<div class="field"><label>${l}</label><input type="number" name="s_${k}" min="0" step="0.01" placeholder="—"></div>`).join('')}</div>
+            <p class="small" style="margin:-4px 0 12px"><button type="button" class="link-btn" data-per-account>Set amounts per account instead</button></p>
+            <div data-per-account-fields style="display:none">
+              <div class="grid-3">${SAMPLE_FIELDS.map(([k, l]) => `<div class="field"><label>${l}</label><input type="number" name="s_${k}" min="0" step="0.01" placeholder="—"></div>`).join('')}</div>
+            </div>
           </div>
         </div>` : ''}
         <div data-first-account>
@@ -134,7 +138,10 @@
         const body = { ...d, must_change_pw: !!d.must_change_pw, accounts: d.with_account ? [{ type: d.a_type, nickname: d.a_nickname, opening: d.a_opening, credit_limit: d.a_credit_limit }] : [] };
         if (d.with_sample) {
           body.accounts = [];
-          body.sample = { from: d.s_from, to: d.s_to, holdings: Object.fromEntries(SAMPLE_FIELDS.map(([k]) => [k, d['s_' + k]])) };
+          const perAccount = f.querySelector('[data-per-account-fields]').style.display !== 'none';
+          body.sample = perAccount
+            ? { from: d.s_from, to: d.s_to, holdings: Object.fromEntries(SAMPLE_FIELDS.map(([k]) => [k, d['s_' + k]])) }
+            : { from: d.s_from, to: d.s_to, total: d.s_total };
         }
         const r = await api('/api/admin/users', { body });
         toast(r.generated?.length
@@ -146,10 +153,22 @@
     });
     for (const [k, v] of Object.entries(prefill)) if (m.el[k] && v != null) m.el[k].value = v;
     wireAccountFields(m.el);
-    if (m.el.with_sample) m.el.with_sample.onchange = (e) => {
-      m.el.querySelector('[data-sample-fields]').style.display = e.target.checked ? '' : 'none';
-      m.el.querySelector('[data-first-account]').style.display = e.target.checked ? 'none' : '';
-    };
+    if (m.el.with_sample) {
+      const sync = () => {
+        const on = m.el.with_sample.checked;
+        m.el.querySelector('[data-sample-fields]').style.display = on ? '' : 'none';
+        m.el.querySelector('[data-first-account]').style.display = on ? 'none' : '';
+      };
+      m.el.with_sample.onchange = sync; sync();
+      const toggle = m.el.querySelector('[data-per-account]');
+      toggle.onclick = () => {
+        const box = m.el.querySelector('[data-per-account-fields]');
+        const per = box.style.display === 'none';
+        box.style.display = per ? '' : 'none';
+        m.el.s_total.closest('.field').style.display = per ? 'none' : '';
+        toggle.textContent = per ? 'Use one total instead' : 'Set amounts per account instead';
+      };
+    }
     m.el.querySelector('[data-gen]').onclick = () => (m.el.password.value = genPassword());
     m.el.with_account.onchange = (e) => (m.el.querySelector('[data-acct-box]').style.display = e.target.checked ? '' : 'none');
   }

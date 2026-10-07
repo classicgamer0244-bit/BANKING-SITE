@@ -502,6 +502,13 @@ function parseSampleRequest(s) {
   if (fromMs > toMs) throw new BankError('The From date can’t be after the To date');
   if (toMs > today) throw new BankError('The To date can’t be in the future');
   if (fromMs < Date.UTC(1900, 0, 1)) throw new BankError('Choose a From date in 1900 or later');
+  // Simple mode: one total, split randomly across deposit accounts.
+  if (s.total !== undefined && s.total !== null && String(s.total).trim() !== '') {
+    const total = Number(s.total);
+    if (!Number.isFinite(total) || total <= 0) throw new BankError('Enter a total deposit amount greater than zero');
+    if (total > 100_000_000) throw new BankError('Total deposits must be $100,000,000 or less');
+    return { fromMs, toMs, holdings: splitTotal(total) };
+  }
   const holdings = {};
   for (const t of SAMPLE_TYPES) {
     const raw = s.holdings?.[t];
@@ -513,6 +520,31 @@ function parseSampleRequest(s) {
   }
   if (!Object.keys(holdings).length) throw new BankError('Enter an amount for at least one account');
   return { fromMs, toMs, holdings };
+}
+
+// Split a total across deposit accounts at random: everyone gets checking; savings from $500;
+// larger totals sometimes add a money market and/or investment account. Parts add up to the cent.
+function splitTotal(total) {
+  const cents = Math.round(total * 100);
+  const r = (a, b) => a + crypto.randomInt(0, 10_000) / 10_000 * (b - a);
+  const weights = { checking: r(0.12, 0.35) };
+  if (total >= 500) weights.savings = r(0.3, 1);
+  if (total >= 25_000 && crypto.randomInt(0, 2)) weights.money_market = r(0.3, 1);
+  if (total >= 50_000 && crypto.randomInt(0, 2)) weights.investment = r(0.3, 1.2);
+  // Checking keeps its share of the total; the rest is shared by the other accounts' weights.
+  const others = Object.keys(weights).filter((k) => k !== 'checking');
+  const out = {};
+  let left = cents;
+  if (!others.length) out.checking = cents;
+  else {
+    out.checking = Math.round(cents * weights.checking);
+    left -= out.checking;
+    const sum = others.reduce((s, k) => s + weights[k], 0);
+    const rest = left;
+    for (const k of others.slice(0, -1)) { out[k] = Math.round(rest * weights[k] / sum); left -= out[k]; }
+    out[others.at(-1)] = left; // last account takes the remainder so the parts add up exactly
+  }
+  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v / 100]));
 }
 
 // Standard rates, matching the published product pages. Money market is tiered by balance.
