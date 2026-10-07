@@ -1,7 +1,7 @@
 {
   "name": "capitalbridge-bank",
   "version": "1.0.0",
-  "description": "CapitalBridge Bank - demo online banking site with admin console, live markets and news",
+  "description": "CapitalBridge Bank - online banking site with admin console, live markets and news",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {

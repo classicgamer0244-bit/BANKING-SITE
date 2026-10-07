@@ -403,7 +403,6 @@
     $('#sideLogo').innerHTML = CB.logo('#/overview');
     $('#who').textContent = `${me.first_name} ${me.last_name}`;
     $('#lastLogin').textContent = me.last_login ? 'Last sign-in ' + dateTime(me.last_login) : '';
-    if (me.sample_data) $('#lastLogin').insertAdjacentHTML('afterend', '<div class="demo-line" style="color:#8ea3c0;margin-bottom:10px">Demonstration account · sample data</div>');
     $('#avatar').textContent = (me.first_name[0] || '') + (me.last_name[0] || '');
     $('#hamb').innerHTML = icon('menu', 24);
     $('#hamb').onclick = () => $('#sidebar').classList.toggle('open');

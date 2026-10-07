@@ -1,5 +1,5 @@
 // Live market data + news with small in-memory caches so we stay within free API limits.
-const UA = { 'user-agent': 'Mozilla/5.0 (CapitalBridge demo)' };
+const UA = { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' };
 
 const cache = new Map();
 async function cached(key, ttlMs, loader) {

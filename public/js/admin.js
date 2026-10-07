@@ -104,14 +104,13 @@
         <div class="grid-3"><div class="field"><label>Job title</label><input name="job_title" maxlength="80" placeholder="e.g. Registered Nurse"></div>
           <div class="field"><label>Employer</label><input name="employer" maxlength="80" placeholder="e.g. Summit Health Partners"></div>
           <div class="field"><label>Annual salary ($)</label><input name="annual_salary" type="number" min="0" step="1000" placeholder="optional"></div></div>
-        ${config.demo ? '<p class="small muted" style="margin:-6px 0 12px">Generated paychecks come from this employer and are sized from the salary (about 75% after taxes, every two weeks).</p>' : ''}
+        <p class="small muted" style="margin:-6px 0 12px">Initial paychecks come from this employer and are sized from the salary (about 75% after taxes, every two weeks).</p>
         <h4 style="margin:10px 0 12px">Online banking login</h4>
         <div class="grid-2"><div class="field"><label>User ID *</label><input name="username" required minlength="4" autocomplete="off"></div>
           <div class="field"><label>Password *</label><div style="display:flex;gap:6px"><input name="password" required minlength="8" autocomplete="new-password" value="${genPassword()}"><button type="button" class="btn btn-ghost btn-sm" data-gen>New</button></div></div></div>
-        ${config.demo ? `
         <div class="sample-box">
-          <label class="check" style="margin:0 0 4px"><input type="checkbox" name="with_sample" checked> <b>Generate accounts &amp; history</b> <span class="badge warn">Demo mode</span></label>
-          <p class="small muted" style="margin:0 0 12px">Enter the total deposits and the dates. Accounts, card numbers, transactions and messages are generated automatically — the total is split across checking, savings and (for larger amounts) money market and investment.</p>
+          <label class="check" style="margin:0 0 4px"><input type="checkbox" name="with_sample" checked> <b>Generate accounts &amp; initial history</b></label>
+          <p class="small muted" style="margin:0 0 12px">Enter the total deposits and the dates. Accounts, card numbers, transactions and messages are created automatically — the total is split across checking, savings and (for larger amounts) money market and investment.</p>
           <div data-sample-fields>
             <div class="grid-3"><div class="field"><label>Total deposits ($)</label><input type="number" name="s_total" min="0.01" step="0.01" placeholder="e.g. 85000"></div>
               <div class="field"><label>From</label><input type="date" name="s_from" max="${new Date().toISOString().slice(0, 10)}"></div>
@@ -121,7 +120,7 @@
               <div class="grid-3">${SAMPLE_FIELDS.map(([k, l]) => `<div class="field"><label>${l}</label><input type="number" name="s_${k}" min="0" step="0.01" placeholder="—"></div>`).join('')}</div>
             </div>
           </div>
-        </div>` : ''}
+        </div>
         <div data-first-account>
         <h4 style="margin:10px 0 12px">Open first account <span class="small muted">(optional)</span></h4>
         <label class="check small" style="margin-bottom:12px"><input type="checkbox" name="with_account" checked> Open an account now</label>
@@ -257,7 +256,7 @@
         $('#list').innerHTML = users.length ? `<div class="table-wrap"><table><thead><tr><th>Customer</th><th>User ID</th><th>Contact</th><th>Accounts</th><th class="amt">Net position</th><th>Status</th><th>Since</th></tr></thead><tbody>
           ${users.map((u) => `<tr class="clickable" data-id="${u.id}"><td><b>${esc(u.first_name)} ${esc(u.last_name)}</b></td><td>${esc(u.username)}</td>
             <td class="small">${esc(u.email || '—')}<div class="muted">${esc(u.phone)}</div></td><td>${u.account_count}</td>
-            <td class="amt">${money(u.net)}</td><td>${statusBadge(u.status)} ${u.sample_data ? '<span class="badge info">Sample data</span>' : ''}</td><td class="muted small">${date(u.created_at)}</td></tr>`).join('')}</tbody></table></div>`
+            <td class="amt">${money(u.net)}</td><td>${statusBadge(u.status)}</td><td class="muted small">${date(u.created_at)}</td></tr>`).join('')}</tbody></table></div>`
           : '<div class="empty">No customers found. Create your first customer to get started.</div>';
         $('#list').querySelectorAll('[data-id]').forEach((r) => r.onclick = () => (location.hash = '#/customer/' + r.dataset.id));
       };
@@ -274,7 +273,7 @@
         <div class="card" style="margin:12px 0 22px">
           <div class="card-head" style="flex-wrap:wrap">
             <div style="display:flex;gap:14px;align-items:center"><div class="avatar" style="width:52px;height:52px;font-size:18px">${esc(u.first_name[0] || '')}${esc(u.last_name[0] || '')}</div>
-              <div><h2 style="font-size:22px">${esc(u.first_name)} ${esc(u.last_name)} ${statusBadge(u.status)} ${u.sample_data ? '<span class="badge info">Sample data</span>' : ''}</h2><div class="small muted">User ID ${esc(u.username)} · Customer #${u.id} · Last sign-in ${u.last_login ? dateTime(u.last_login) : 'never'}</div></div></div>
+              <div><h2 style="font-size:22px">${esc(u.first_name)} ${esc(u.last_name)} ${statusBadge(u.status)}</h2><div class="small muted">User ID ${esc(u.username)} · Customer #${u.id} · Last sign-in ${u.last_login ? dateTime(u.last_login) : 'never'}</div></div></div>
             <div class="actions">
               <button class="btn btn-sm btn-ghost" data-act="edit">Edit profile</button>
               <button class="btn btn-sm btn-ghost" data-act="reset">Reset password</button>
@@ -348,7 +347,7 @@
       });
       act('delete', () => modal({
         title: 'Delete customer', submitText: 'Delete permanently', danger: true,
-        body: `<p>Permanently delete <b>${esc(u.first_name)} ${esc(u.last_name)}</b> and all their records? All account balances must be zero first. This cannot be undone.</p>`,
+        body: `<p>Are you sure you want to permanently delete <b>${esc(u.first_name)} ${esc(u.last_name)}</b>? All accounts, balances, and records for this customer will be removed. This cannot be undone.</p>`,
         onSubmit: async () => { await api('/api/admin/users/' + id, { method: 'DELETE' }); toast('Customer deleted', 'success'); location.hash = '#/customers'; },
       }));
       act('open', () => {
