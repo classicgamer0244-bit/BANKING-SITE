@@ -48,22 +48,11 @@
       <tbody data-tx-body>${txRows(list, opts)}</tbody></table></div>
       <div class="show-more" ${more ? '' : 'hidden'}><button type="button" class="btn btn-ghost btn-sm" data-tx-more>Show more</button></div>`;
   }
-  // Wires the "Show more" button under a txTable: fetchPage(beforeId) must resolve to {transactions, more}.
+  // "Show more" under a txTable: one click, then older rows keep loading as you scroll.
+  let stopPager = () => {};
   function attachShowMore(root, fetchPage, opts, onLoaded) {
-    const btn = root.querySelector('[data-tx-more]');
-    if (!btn) return;
-    btn.onclick = async () => {
-      const body = root.querySelector('[data-tx-body]');
-      const before = Number(body.lastElementChild?.dataset.tx) || 0;
-      btn.disabled = true; btn.textContent = 'Loading…';
-      try {
-        const r = await fetchPage(before);
-        body.insertAdjacentHTML('beforeend', txRows(r.transactions, opts));
-        btn.closest('.show-more').hidden = !r.more;
-        if (onLoaded) onLoaded();
-      } catch (e) { toast(e.message, 'error'); }
-      btn.disabled = false; btn.textContent = 'Show more';
-    };
+    stopPager();
+    stopPager = CB.autoPager(root, fetchPage, (list) => txRows(list, opts), onLoaded);
   }
   function bindReverse(after) {
     page.querySelectorAll('[data-reverse]').forEach((b) => b.onclick = () => modal({

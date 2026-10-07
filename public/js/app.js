@@ -118,19 +118,10 @@
 
       // "Show more" pages through older transactions; search runs on the server across the whole history.
       const box = $('#txBox');
+      let stopPager = () => {};
       const wireMore = (q) => {
-        const btn = box.querySelector('[data-tx-more]');
-        if (!btn) return;
-        btn.onclick = async () => {
-          const before = Number(box.querySelector('[data-tx-body]').lastElementChild?.dataset.tx) || 0;
-          btn.disabled = true; btn.textContent = 'Loading…';
-          try {
-            const r = await api(`/api/accounts/${a.id}/transactions?before=${before}&q=${encodeURIComponent(q)}`);
-            box.querySelector('[data-tx-body]').insertAdjacentHTML('beforeend', txRows(r.transactions));
-            btn.closest('.show-more').hidden = !r.more;
-          } catch (e) { toast(e.message, 'error'); }
-          btn.disabled = false; btn.textContent = 'Show more';
-        };
+        stopPager();
+        stopPager = CB.autoPager(box, (before) => api(`/api/accounts/${a.id}/transactions?before=${before}&q=${encodeURIComponent(q)}`), (list) => txRows(list));
       };
       wireMore('');
       let timer;
@@ -155,19 +146,10 @@
         <div id="actBox"><div class="muted">Loading…</div></div></div>`;
       const box = $('#actBox');
       const query = () => `q=${encodeURIComponent($('#actSearch').value.trim())}&account=${$('#actAccount').value}`;
+      let stopPager = () => {};
       const wireMore = (qs) => {
-        const btn = box.querySelector('[data-tx-more]');
-        if (!btn) return;
-        btn.onclick = async () => {
-          const before = Number(box.querySelector('[data-tx-body]').lastElementChild?.dataset.tx) || 0;
-          btn.disabled = true; btn.textContent = 'Loading…';
-          try {
-            const r = await api(`/api/activity?${qs}&before=${before}`);
-            box.querySelector('[data-tx-body]').insertAdjacentHTML('beforeend', txRows(r.transactions, true));
-            btn.closest('.show-more').hidden = !r.more;
-          } catch (e) { toast(e.message, 'error'); }
-          btn.disabled = false; btn.textContent = 'Show more';
-        };
+        stopPager();
+        stopPager = CB.autoPager(box, (before) => api(`/api/activity?${qs}&before=${before}`), (list) => txRows(list, true));
       };
       const load = async () => {
         const qs = query();

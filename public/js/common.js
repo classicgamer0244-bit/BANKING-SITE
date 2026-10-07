@@ -128,10 +128,63 @@ const CB = (() => {
 
   const fmtPrice = (q) => (q.isYield ? q.price.toFixed(3) + '%' : q.price >= 1000 ? num(q.price, 2) : q.price >= 1 ? num(q.price, 2) : num(q.price, 4));
 
+  /**
+   * "Show more" under a transaction table. The first click loads the next page and switches to
+   * automatic loading: further pages load as the bottom of the list scrolls into view.
+   * fetchPage(beforeId) -> {transactions, more}; renderRows(list) -> <tr> html.
+   */
+  function autoPager(box, fetchPage, renderRows, onLoaded) {
+    const wrap = box.querySelector('.show-more');
+    const btn = wrap?.querySelector('[data-tx-more]');
+    if (!btn) return () => {};
+    let auto = false, loading = false, done = false;
+    const stop = () => { removeEventListener('scroll', onScroll); removeEventListener('resize', onScroll); };
+    const onScroll = () => {
+      if (!wrap.isConnected) return stop(); // page changed
+      if (auto && !loading && !done && nearBottom()) loadNext();
+    };
+    const finish = () => {
+      done = true;
+      stop();
+      wrap.hidden = false;
+      wrap.innerHTML = '<span class="small muted">You’ve reached the beginning of this history.</span>';
+    };
+    const nearBottom = () => wrap.isConnected && wrap.getBoundingClientRect().top < innerHeight + 600;
+    async function loadNext() {
+      if (loading || done || !wrap.isConnected) return;
+      loading = true;
+      btn.disabled = true; btn.textContent = 'Loading…';
+      try {
+        const body = box.querySelector('[data-tx-body]');
+        const before = Number(body.lastElementChild?.dataset.tx) || 0;
+        const r = await fetchPage(before);
+        body.insertAdjacentHTML('beforeend', renderRows(r.transactions));
+        if (onLoaded) onLoaded();
+        if (!r.more) finish();
+      } catch (e) {
+        toast(e.message, 'error');
+      } finally {
+        loading = false;
+        if (!done) { btn.disabled = false; btn.textContent = auto ? 'Loading more as you scroll…' : 'Show more'; }
+      }
+      // Keep going while the end of the list is still on screen (e.g. on tall monitors).
+      if (auto && !done && nearBottom()) loadNext();
+    }
+    btn.onclick = () => {
+      if (!auto) {
+        auto = true;
+        addEventListener('scroll', onScroll, { passive: true });
+        addEventListener('resize', onScroll);
+      }
+      loadNext();
+    };
+    return stop;
+  }
+
   async function logout() {
     try { await api('/api/auth/logout', { method: 'POST', allow401: true }); } catch { /* ignore */ }
     location.href = '/';
   }
 
-  return { api, money, num, pct, esc, date, dateTime, ago, icon, typeIcon, logo, toast, modal, formData, sparkline, fmtPrice, acctName, TYPE_LABEL, logout };
+  return { api, money, num, pct, esc, date, dateTime, ago, icon, typeIcon, logo, toast, modal, formData, sparkline, fmtPrice, acctName, TYPE_LABEL, logout, autoPager };
 })();
