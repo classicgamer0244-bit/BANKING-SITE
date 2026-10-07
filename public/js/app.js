@@ -168,7 +168,7 @@
     },
 
     async transfer(arg, query) {
-      const [{ }, tSettings] = await Promise.all([
+      const [, tSettings] = await Promise.all([
         refreshAccounts(),
         api('/api/transfer-settings').catch(() => ({ transfers_paused: false, notice_enabled: false })),
       ]);
