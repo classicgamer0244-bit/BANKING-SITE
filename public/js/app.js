@@ -21,7 +21,7 @@
 
   // Category sits under the description so the table fits without sideways scrolling.
   function txRows(list, showAcct) {
-    return list.map((t) => `<tr data-tx="${t.id}">
+    return list.map((t) => `<tr data-tx="${t.id}" class="clickable" tabindex="0" role="button" aria-label="View transaction details">
         <td class="tx-date">${date(t.created_at)}</td>
         <td class="tx-desc">${esc(t.description)} ${t.status === 'reversed' ? '<span class="badge bad">Reversed</span>' : ''}
           <div class="small muted"><span class="tx-cat">${esc(t.category.replace('_', ' '))}</span>${showAcct ? `<span class="tx-acct-inline"> · ••${esc(t.account_number.slice(-4))}</span>` : ''}<span class="tx-ref"> · Ref ${esc(t.reference)}</span></div></td>
@@ -35,6 +35,57 @@
     return `<div class="table-wrap"><table class="tx-table"><thead><tr><th>Date</th><th>Description</th>${showAcct ? '<th class="tx-acct">Account</th>' : ''}<th class="amt">Amount</th>${showAcct ? '' : '<th class="amt">Balance</th>'}</tr></thead>
       <tbody data-tx-body>${txRows(list, showAcct)}</tbody></table></div>
       <div class="show-more" ${more ? '' : 'hidden'}><button type="button" class="btn btn-ghost btn-sm" data-tx-more>Show more</button></div>`;
+  }
+
+  function bindTxClick(root = page) {
+    root.querySelectorAll('[data-tx]').forEach((row) => {
+      if (row._txBound) return;
+      row._txBound = true;
+      const open = () => showTxDetails(row.dataset.tx);
+      row.onclick = open;
+      row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+    });
+  }
+
+  async function showTxDetails(txId) {
+    try {
+      const { transaction: t } = await api('/api/transactions/' + txId);
+      const isCreditDirection = t.direction === 'in';
+      const acct = accounts.find((a) => a.id === t.account_id);
+      const acctTitle = t.nickname || (acct ? acctName(acct) : (t.account_type ? TYPE_LABEL[t.account_type] || t.account_type : 'Account'));
+      const acctNum = t.account_number ? '••••' + t.account_number.slice(-4) : (acct ? acct.masked : '');
+
+      modal({
+        title: 'Transaction details',
+        submitText: 'Done',
+        body: `
+          <div style="padding:6px 0">
+            <div style="text-align:center;padding:12px 0 18px;border-bottom:1px solid var(--line)">
+              <div class="amt ${isCreditDirection ? 'up' : ''}" style="font-size:28px;font-weight:800;letter-spacing:-0.5px">
+                ${signed(t)}
+              </div>
+              <div style="font-size:15px;font-weight:600;margin-top:4px">${esc(t.description)}</div>
+              <div style="margin-top:8px">
+                <span class="badge ${t.status === 'posted' ? 'good' : 'bad'}">${esc(t.status.toUpperCase())}</span>
+                <span class="badge" style="text-transform:capitalize">${esc(t.category.replace('_', ' '))}</span>
+              </div>
+            </div>
+
+            <div class="detail-grid" style="grid-template-columns:1fr 1fr;margin-top:16px">
+              <div><div class="k">Date &amp; Time</div><div class="v">${dateTime(t.created_at)}</div></div>
+              <div><div class="k">Reference Number</div><div class="v" style="font-family:monospace;font-size:13px">${esc(t.reference)}</div></div>
+              <div><div class="k">Account</div><div class="v">${esc(acctTitle)} ${acctNum}</div></div>
+              <div><div class="k">Balance After</div><div class="v num">${money(t.balance_after)}</div></div>
+              <div><div class="k">Type</div><div class="v">${t.direction === 'in' ? 'Deposit / Inflow' : 'Withdrawal / Outflow'}</div></div>
+              <div><div class="k">Channel</div><div class="v">${t.category === 'transfer' ? 'Transfer & Send' : 'Online Banking'}</div></div>
+            </div>
+          </div>
+        `,
+        onSubmit: () => {},
+      });
+    } catch (e) {
+      toast(e.message, 'error');
+    }
   }
 
   async function refreshAccounts() { accounts = (await api('/api/accounts')).accounts; }
@@ -85,6 +136,7 @@
           </div>
         </div>`;
       bindAcctTiles();
+      bindTxClick();
       CB.api('/api/market').then((m) => {
         const el = $('#ovMarkets'); if (!el || !m.indices) return;
         el.innerHTML = `<div class="card-head"><h3>Markets</h3><a href="#/markets">More</a></div>` + m.indices.slice(0, 4).map((q) => `
@@ -122,10 +174,11 @@
 
       // "Show more" pages through older transactions; search runs on the server across the whole history.
       const box = $('#txBox');
+      bindTxClick(box);
       let stopPager = () => {};
       const wireMore = (q) => {
         stopPager();
-        stopPager = CB.autoPager(box, (before) => api(`/api/accounts/${a.id}/transactions?before=${before}&q=${encodeURIComponent(q)}`), (list) => txRows(list));
+        stopPager = CB.autoPager(box, (before) => api(`/api/accounts/${a.id}/transactions?before=${before}&q=${encodeURIComponent(q)}`), (list) => txRows(list), () => bindTxClick(box));
       };
       wireMore('');
       let timer;
@@ -135,6 +188,7 @@
           const q = e.target.value.trim();
           const r = await api(`/api/accounts/${a.id}/transactions?q=${encodeURIComponent(q)}`);
           box.innerHTML = txTable(r.transactions, false, r.more);
+          bindTxClick(box);
           wireMore(q);
         }, 250);
       });
@@ -153,12 +207,13 @@
       let stopPager = () => {};
       const wireMore = (qs) => {
         stopPager();
-        stopPager = CB.autoPager(box, (before) => api(`/api/activity?${qs}&before=${before}`), (list) => txRows(list, true));
+        stopPager = CB.autoPager(box, (before) => api(`/api/activity?${qs}&before=${before}`), (list) => txRows(list, true), () => bindTxClick(box));
       };
       const load = async () => {
         const qs = query();
         const r = await api(`/api/activity?${qs}`);
         box.innerHTML = txTable(r.transactions, true, r.more);
+        bindTxClick(box);
         wireMore(qs);
       };
       let timer;
@@ -262,14 +317,14 @@
                   <label>Destination bank</label>
                   <select name="recipientBankSelect" id="extBankSelect">
                     <option value="">Select destination bank...</option>
-                    <option value="JPMorgan Chase" data-routing="021000021">JPMorgan Chase</option>
-                    <option value="Bank of America" data-routing="026009593">Bank of America</option>
-                    <option value="Wells Fargo" data-routing="121000247">Wells Fargo</option>
-                    <option value="Citibank" data-routing="021000089">Citibank</option>
-                    <option value="Capital One" data-routing="051405515">Capital One</option>
-                    <option value="PNC Bank" data-routing="043000096">PNC Bank</option>
-                    <option value="U.S. Bank" data-routing="091000022">U.S. Bank</option>
-                    <option value="TD Bank" data-routing="031201360">TD Bank</option>
+                    <option value="JPMorgan Chase">JPMorgan Chase</option>
+                    <option value="Bank of America">Bank of America</option>
+                    <option value="Wells Fargo">Wells Fargo</option>
+                    <option value="Citibank">Citibank</option>
+                    <option value="Capital One">Capital One</option>
+                    <option value="PNC Bank">PNC Bank</option>
+                    <option value="U.S. Bank">U.S. Bank</option>
+                    <option value="TD Bank">TD Bank</option>
                     <option value="other">Other bank or credit union...</option>
                   </select>
                 </div>
@@ -344,19 +399,15 @@
         $('#toExternal').style.display = mode === 'external' ? '' : 'none';
       });
 
-      // Bank select auto routing
+      // Bank select
       const bankSel = $('#extBankSelect');
-      const routingInput = $('#extRoutingInput');
       const bankOtherField = $('#extBankOtherField');
       if (bankSel) {
         bankSel.addEventListener('change', () => {
-          const opt = bankSel.options[bankSel.selectedIndex];
           if (bankSel.value === 'other') {
             bankOtherField.style.display = '';
-            routingInput.value = '';
           } else {
             bankOtherField.style.display = 'none';
-            if (opt && opt.dataset.routing) routingInput.value = opt.dataset.routing;
           }
         });
       }

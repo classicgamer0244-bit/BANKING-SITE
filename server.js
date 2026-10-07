@@ -307,7 +307,8 @@ app.get('/api/accounts/:id/transactions', requireAuth, requireCustomer, wrap((re
   const a = myAccount(req, req.params.id);
   const { before, limit } = pageArgs(req.query);
   const q = `%${str(req.query.q, 60)}%`;
-  const rows = db.prepare(`SELECT t.* FROM transactions t WHERE t.account_id = ? AND ${AFTER_CURSOR}
+  const rows = db.prepare(`SELECT t.*, a.number, a.type, a.nickname FROM transactions t JOIN accounts a ON a.id = t.account_id
+                           WHERE t.account_id = ? AND ${AFTER_CURSOR}
                            AND (t.description LIKE ? OR t.reference LIKE ? OR t.category LIKE ?) ORDER BY t.created_at DESC, t.id DESC LIMIT ?`)
     .all(a.id, ...cursorArgs(before), q, q, q, limit + 1);
   res.json({ account: acctView(a), transactions: rows.slice(0, limit).map(txView), more: rows.length > limit });
@@ -318,12 +319,20 @@ app.get('/api/activity', requireAuth, requireCustomer, (req, res) => {
   const { before, limit } = pageArgs(req.query);
   const q = `%${str(req.query.q, 60)}%`;
   const account = Number(req.query.account) || 0;
-  const rows = db.prepare(`SELECT t.*, a.number, a.type FROM transactions t JOIN accounts a ON a.id = t.account_id
+  const rows = db.prepare(`SELECT t.*, a.number, a.type, a.nickname FROM transactions t JOIN accounts a ON a.id = t.account_id
       WHERE a.user_id = ? AND ${AFTER_CURSOR} AND (? = 0 OR a.id = ?)
         AND (t.description LIKE ? OR t.reference LIKE ? OR t.category LIKE ?)
       ORDER BY t.created_at DESC, t.id DESC LIMIT ?`).all(req.user.id, ...cursorArgs(before), account, account, q, q, q, limit + 1);
   res.json({ transactions: rows.slice(0, limit).map(txView), more: rows.length > limit });
 });
+
+app.get('/api/transactions/:id', requireAuth, requireCustomer, wrap((req, res) => {
+  const t = db.prepare(`SELECT t.*, a.number, a.type, a.nickname FROM transactions t
+                        JOIN accounts a ON a.id = t.account_id
+                        WHERE t.id = ? AND a.user_id = ?`).get(Number(req.params.id), req.user.id);
+  if (!t) throw new BankError('Transaction not found', 404);
+  res.json({ transaction: txView(t) });
+}));
 
 app.get('/api/accounts/:id/statement.csv', requireAuth, requireCustomer, wrap((req, res) => {
   const a = myAccount(req, req.params.id);
