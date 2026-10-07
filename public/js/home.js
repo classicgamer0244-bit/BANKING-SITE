@@ -83,6 +83,9 @@
 
   function renderTable() {
     const box = $('#mktTable');
+    box.classList.remove('tab-fade');
+    void box.offsetWidth;
+    box.classList.add('tab-fade');
     if (tab === 'fx') {
       if (!market.fx) { box.innerHTML = '<div class="empty">Currency rates unavailable.</div>'; return; }
       box.innerHTML = `<table><thead><tr><th>Currency</th><th class="amt">1 USD =</th><th class="amt">1 unit =</th></tr></thead><tbody>
@@ -126,7 +129,11 @@
       const [first, ...rest] = items;
       const ann = announcements.map((a) => `<div class="row"><span class="badge info">CapitalBridge</span>
           <div style="font-weight:700;margin-top:6px">${esc(a.title)}</div><div class="small muted">${esc(a.body)}</div></div>`).join('');
-      if (!first) { grid.innerHTML = `<div class="news-item" style="grid-column:1/-1"><div class="news-list">${ann || '<div class="muted">Headlines are unavailable right now.</div>'}</div></div>`; return; }
+      if (!first) {
+        grid.innerHTML = `<div class="news-item" style="grid-column:1/-1"><div class="news-list">${ann || '<div class="muted">Headlines are unavailable right now.</div>'}</div></div>`;
+        grid.classList.remove('tab-fade'); void grid.offsetWidth; grid.classList.add('tab-fade');
+        return;
+      }
       const link = (n) => `<a href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>`;
       grid.innerHTML = `
         <article class="news-feature"><span class="eyebrow">${t('Top story', 'Noticia principal')}</span><h3>${link(first)}</h3><div class="news-meta">${esc(first.source)} · ${when(first.published)}</div></article>
@@ -135,6 +142,7 @@
           ${ann}
           ${rest.slice(4, 10).map((n) => `<div class="row">${link(n)}<div class="news-meta">${esc(n.source)} · ${when(n.published)}</div></div>`).join('')}
         </div></div>`;
+      grid.classList.remove('tab-fade'); void grid.offsetWidth; grid.classList.add('tab-fade');
     } catch { grid.innerHTML = '<div class="muted">Headlines are unavailable right now.</div>'; }
   }
   $('#newsTabs').addEventListener('click', (e) => {

@@ -146,6 +146,25 @@ const SITE = (() => {
     const btn = document.getElementById('menuBtn');
     if (btn) btn.onclick = () => { const open = document.getElementById('mainNav').classList.toggle('open'); btn.setAttribute('aria-expanded', open); };
     document.addEventListener('click', (e) => {
+      const anchor = e.target.closest('a[href^="#"]');
+      if (anchor) {
+        const hash = anchor.getAttribute('href');
+        if (hash && hash !== '#') {
+          const target = document.querySelector(hash);
+          if (target) {
+            e.preventDefault();
+            const headerOffset = 84;
+            const elementPosition = target.getBoundingClientRect().top;
+            const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+            window.scrollTo({
+              top: offsetPosition,
+              behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+            });
+            if (history.pushState) history.pushState(null, '', hash);
+            return;
+          }
+        }
+      }
       if (e.target.closest('[data-lang]')) setLang(lang === 'es' ? 'en' : 'es');
       if (e.target.closest('[data-cookie-prefs]')) cookieModal();
       if (e.target.closest('[data-top]')) window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
