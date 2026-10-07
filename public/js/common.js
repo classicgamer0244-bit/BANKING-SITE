@@ -28,7 +28,7 @@ const CB = (() => {
   };
 
   const TYPE_LABEL = {
-    checking: 'Advantage Checking', savings: 'Advantage Savings', money_market: 'Money Market',
+    checking: 'Bridge Checking', savings: 'Bridge Savings', money_market: 'Money Market',
     cd: 'Certificate of Deposit', credit_card: 'Rewards Credit Card', loan: 'Personal Loan', investment: 'Investment Account',
   };
   const acctName = (a) => a.nickname || TYPE_LABEL[a.type] || a.type;

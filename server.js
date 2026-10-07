@@ -472,9 +472,23 @@ admin.post('/users', wrap((req, res) => {
   res.json({ ok: true, id: created });
 }));
 
+// Standard rates, matching the published product pages. Money market is tiered by balance.
+function standardRate(type, openingDollars = 0) {
+  switch (type) {
+    case 'checking': return 0.01;
+    case 'savings': return 0.01;
+    case 'money_market': return openingDollars >= 25000 ? 0.03 : openingDollars >= 10000 ? 0.02 : 0.01;
+    case 'cd': return 0.03;          // standard term
+    case 'credit_card': return 21.99;
+    case 'loan': return 9.49;
+    default: return 0;               // investment
+  }
+}
+
 function openAccount(userId, a, actorId) {
   const type = str(a.type, 20);
   if (!ACCOUNT_TYPES.includes(type)) throw new BankError('Unknown account type');
+  a = { ...a, rate: standardRate(type, Number(a.opening) || 0) };
   const hasCard = type === 'checking' || type === 'credit_card';
   const r = db.prepare(`INSERT INTO accounts (user_id, type, nickname, number, credit_limit_cents, rate, card_last4)
                         VALUES (?, ?, ?, ?, ?, ?, ?)`)
@@ -704,7 +718,8 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 // ---------------- pages ----------------
 const pub = path.join(__dirname, 'public');
-app.use(express.static(pub, { extensions: ['html'] }));
+// no-cache: browsers keep their copy but check it's current, so updates show up right away.
+app.use(express.static(pub, { extensions: ['html'], setHeaders: (res) => res.set('Cache-Control', 'no-cache') }));
 app.get('/app', (req, res) => res.sendFile(path.join(pub, 'app.html')));
 app.get('/admin', (req, res) => res.sendFile(path.join(pub, 'admin.html')));
 app.get('/p/:slug', (req, res) => res.sendFile(path.join(pub, 'page.html')));

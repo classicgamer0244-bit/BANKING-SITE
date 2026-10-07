@@ -32,7 +32,7 @@
 
   const PRODUCTS = {
     checking: {
-      crumb: 'Banking', title: 'Advantage Checking', intro: 'Everyday banking with no monthly fee when you receive $500 or more in direct deposits each month.',
+      crumb: 'Banking', title: 'Bridge Checking', intro: 'Everyday banking with no monthly fee when you receive $500 or more in direct deposits each month.',
       rates: [['$0', 'Monthly fee with direct deposit'], ['$25', 'Minimum opening deposit'], ['40,000+', 'Fee-free ATMs nationwide']],
       cta: OPEN('checking'),
       features: [['card', 'Contactless debit card', 'Lock and unlock your card instantly from Online Banking.'], ['transfer', 'Instant transfers', 'Move money between CapitalBridge accounts and to other customers 24/7.'], ['shield', 'Overdraft protection', 'Link your savings to cover purchases and avoid declined payments.'], ['bill', 'Bill Pay', 'Pay utilities, rent and more from one place, on your schedule.'], ['download', 'Statements & alerts', 'Download statements any time and get alerts on every transaction.'], ['savings', 'Automatic savings', 'Round up purchases or schedule transfers to your savings account.']],
@@ -40,28 +40,28 @@
       faq: [['How do I set up direct deposit?', 'After your account is open, sign in and find your account and routing numbers on the account page. Give them to your employer, or download a pre-filled direct deposit form.'], ['When can I use my debit card?', 'Your card arrives in 7–10 business days. You can add it to your mobile wallet as soon as your account is open.'], ['Can I open a joint account?', 'Yes. Start the application online and a banker will contact you to add a co-owner.']],
     },
     savings: {
-      crumb: 'Banking', title: 'Advantage Savings', intro: 'A high-yield savings account with no minimum balance, so every dollar earns.',
-      rates: [['4.35%', 'APY¹'], ['$0', 'Minimum balance'], ['$0', 'Monthly fee']],
+      crumb: 'Banking', title: 'Bridge Savings', intro: 'A simple savings account with no minimum balance and no monthly fee, so every dollar earns interest.',
+      rates: [['0.01%', 'APY¹'], ['$0', 'Minimum balance'], ['$0', 'Monthly fee']],
       cta: OPEN('savings'),
-      features: [['savings', 'Competitive rate', 'Earn 4.35% APY¹ on every balance tier.'], ['transfer', 'Automatic transfers', 'Schedule weekly or monthly transfers from checking.'], ['shield', 'Overdraft backup', 'Link to Advantage Checking to cover shortfalls.']],
-      details: [['APY¹', '4.35%, variable'], ['Minimum opening deposit', '$0'], ['Withdrawals', 'Unlimited transfers to your own CapitalBridge accounts'], ['Interest', 'Compounded daily, credited monthly']],
+      features: [['savings', 'Interest on every dollar', 'Earn 0.01% APY¹ on every balance, with interest credited monthly.'], ['transfer', 'Automatic transfers', 'Schedule weekly or monthly transfers from checking.'], ['shield', 'Overdraft backup', 'Link to Bridge Checking to cover shortfalls.']],
+      details: [['APY¹', '0.01%, variable'], ['Minimum opening deposit', '$0'], ['Withdrawals', 'Unlimited transfers to your own CapitalBridge accounts'], ['Interest', 'Compounded daily, credited monthly']],
       faq: [['Is the rate fixed?', 'No. The savings APY is variable and may change after the account is opened.'], ['How often is interest paid?', 'Interest compounds daily and is credited to your account monthly.']],
       also: [['CDs', '/p/cds', 'Lock in a guaranteed rate'], ['Money market', '/p/money-market', 'Higher rates for larger balances']],
     },
     cds: {
       crumb: 'Banking', title: 'Certificates of Deposit', intro: 'Lock in a guaranteed rate for a fixed term, from 3 months to 5 years.',
-      rates: [['4.75%', '12-month APY¹'], ['$1,000', 'Minimum deposit'], ['3–60', 'Months term']],
+      rates: [['0.03%', 'Standard APY¹'], ['$1,000', 'Minimum deposit'], ['3–60', 'Months term']],
       cta: OPEN('cd'),
       features: [['lock', 'Guaranteed rate', 'Your rate stays the same for the whole term.'], ['chart', 'Flexible terms', 'Choose from 3, 6, 12, 24, 36 or 60 months.'], ['savings', 'Automatic renewal', 'Renew at maturity, or move funds with no fee during the 10-day grace period.']],
-      details: [['3-month', '4.00% APY'], ['6-month', '4.50% APY'], ['12-month', '4.75% APY'], ['24-month', '4.25% APY'], ['60-month', '3.90% APY'], ['Early withdrawal penalty', '90 days of interest (terms ≤ 12 months); 180 days (longer terms)']],
+      details: [['3-month', '0.03% APY'], ['6-month', '0.03% APY'], ['12-month', '0.03% APY'], ['24-month', '0.03% APY'], ['60-month', '0.03% APY'], ['Early withdrawal penalty', '90 days of interest (terms ≤ 12 months); 180 days (longer terms)']],
       faq: [['What happens at maturity?', 'Your CD renews automatically for the same term unless you tell us otherwise during the 10-day grace period.']],
     },
     'money-market': {
       crumb: 'Banking', title: 'Money Market', intro: 'Tiered rates that reward larger balances, with check-writing and easy access.',
-      rates: [['4.50%', 'APY¹ on $25,000+'], ['$2,500', 'Minimum opening deposit'], ['$0', 'Fee with $10,000 balance']],
+      rates: [['0.03%', 'APY¹ on $25,000+'], ['$2,500', 'Minimum opening deposit'], ['$0', 'Fee with $10,000 balance']],
       cta: OPEN('money_market'),
       features: [['chart', 'Tiered rates', 'Earn more as your balance grows.'], ['accounts', 'Check-writing', 'Write checks directly from your account.'], ['transfer', 'Easy access', 'Transfer to checking instantly in Online Banking.']],
-      details: [['Under $10,000', '3.75% APY'], ['$10,000–$24,999', '4.20% APY'], ['$25,000+', '4.50% APY'], ['Monthly fee', '$15, waived with a $10,000 daily balance']],
+      details: [['Under $10,000', '0.01% APY'], ['$10,000–$24,999', '0.02% APY'], ['$25,000+', '0.03% APY'], ['Monthly fee', '$15, waived with a $10,000 daily balance']],
       faq: [],
     },
     'credit-cards': {
@@ -92,7 +92,7 @@
       crumb: 'Borrowing', title: 'Auto Loans', intro: 'Finance a new or used car, or refinance the loan you already have.',
       rates: [['5.49%', 'APR as low as'], ['84', 'Months max term'], ['0.25%', 'Customer rate discount']],
       cta: APPLY('auto_loan'),
-      features: [['car', 'New, used & refinance', 'Buy from a dealer or private seller.'], ['check', 'Fast decisions', 'Most applications are decided within minutes.'], ['savings', 'Customer discount', '0.25% off when you pay automatically from Advantage Checking.']],
+      features: [['car', 'New, used & refinance', 'Buy from a dealer or private seller.'], ['check', 'Fast decisions', 'Most applications are decided within minutes.'], ['savings', 'Customer discount', '0.25% off when you pay automatically from Bridge Checking.']],
       details: [['New vehicle', 'From 5.49% APR'], ['Used vehicle', 'From 5.99% APR'], ['Refinance', 'From 5.79% APR'], ['Terms', '36–84 months'], ['Minimum amount', '$7,500']], faq: [],
     },
     'personal-loans': {
@@ -269,7 +269,7 @@
     <p class="small muted">${t('Fraud line', 'Línea de fraude')}: ${FRAUD_PHONE}</p>
     <p class="small muted">${icon('shield', 14)} ${t('We will never ask for your password, PIN or one-time passcode.', 'Nunca le pediremos su contraseña, PIN o código.')}</p>`;
 
-  const PRODUCT_OPTIONS = [['checking', 'Advantage Checking'], ['savings', 'Advantage Savings'], ['money_market', 'Money Market'], ['cd', 'Certificate of Deposit (CD)'],
+  const PRODUCT_OPTIONS = [['checking', 'Bridge Checking'], ['savings', 'Bridge Savings'], ['money_market', 'Money Market'], ['cd', 'Certificate of Deposit (CD)'],
     ['credit_card', 'Bridge Rewards Credit Card'], ['mortgage', t('Mortgage / Refinance', 'Hipoteca / Refinanciamiento')], ['auto_loan', t('Auto loan', 'Préstamo de auto')], ['personal_loan', t('Personal loan', 'Préstamo personal')], ['investment', 'Bridge Invest / IRA']];
   const STATES = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'];
   const tomorrow = () => { const d = new Date(Date.now() + 864e5); return d.toISOString().slice(0, 10); };

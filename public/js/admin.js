@@ -31,7 +31,7 @@
       ${list.map((t) => `<tr>
         <td class="muted" style="white-space:nowrap">${dateTime(t.created_at)}</td>
         ${withCustomer ? `<td><a href="#/customer/${t.user_id}">${esc(t.customer)}</a></td>` : ''}
-        <td class="muted" style="white-space:nowrap">••${esc(t.account_number.slice(-4))}<div class="small">${esc((TYPE_LABEL[t.account_type] || t.account_type).replace('Advantage ', ''))}</div></td>
+        <td class="muted" style="white-space:nowrap">••${esc(t.account_number.slice(-4))}<div class="small">${esc((TYPE_LABEL[t.account_type] || t.account_type).replace('Bridge ', ''))}</div></td>
         <td>${esc(t.description)}<div class="small muted">${esc(t.reference)}</div></td>
         <td><span class="badge">${esc(t.category)}</span> ${t.status === 'reversed' ? statusBadge('reversed') : ''}</td>
         <td class="amt ${t.direction === 'in' ? 'up' : ''}" style="font-weight:600">${signed(t)}</td>
@@ -55,20 +55,24 @@
     </div>
     <div class="grid-3">
       <div class="field"><label data-open-label>Opening deposit ($)</label><input name="${prefix}opening" type="number" step="0.01" min="0" value="0"></div>
-      <div class="field"><label data-rate-label>APY (%)</label><input name="${prefix}rate" type="number" step="0.01" min="0" value="0.01"></div>
+      <div class="field"><label data-rate-label>APY</label><div class="rate-auto" data-rate-show></div></div>
       <div class="field" data-limit style="display:none"><label>Credit limit ($)</label><input name="${prefix}credit_limit" type="number" step="0.01" min="0" value="5000"></div>
     </div>`;
-  const RATE_DEFAULT = { checking: 0.01, savings: 4.35, money_market: 4.5, cd: 4.75, credit_card: 21.99, loan: 9.49, investment: 0 };
+  // Mirrors standardRate() on the server, which is what actually gets applied.
+  const standardRate = (type, opening) => ({ checking: 0.01, savings: 0.01, cd: 0.03, credit_card: 21.99, loan: 9.49, investment: 0 }[type]
+    ?? (opening >= 25000 ? 0.03 : opening >= 10000 ? 0.02 : 0.01));
+  const RATE_NOTE = { money_market: 'tiered by balance', cd: 'standard term', investment: 'no interest' };
   function wireAccountFields(root) {
     const sel = root.querySelector('[data-acct-type]');
+    const opening = root.querySelector('[name$="opening"]');
     const upd = () => {
       const t = sel.value, credit = t === 'credit_card' || t === 'loan';
       root.querySelector('[data-limit]').style.display = t === 'credit_card' ? '' : 'none';
-      root.querySelector('[data-rate-label]').textContent = credit ? 'APR (%)' : 'APY (%)';
+      root.querySelector('[data-rate-label]').textContent = credit ? 'APR (automatic)' : 'APY (automatic)';
       root.querySelector('[data-open-label]').textContent = t === 'loan' ? 'Loan principal ($)' : t === 'credit_card' ? 'Opening balance owed ($)' : 'Opening deposit ($)';
-      root.querySelector('[name$="rate"]').value = RATE_DEFAULT[t];
+      root.querySelector('[data-rate-show]').innerHTML = `<b>${num(standardRate(t, Number(opening.value) || 0), 2)}%</b> <span class="small muted">${RATE_NOTE[t] || 'standard rate'}</span>`;
     };
-    sel.onchange = upd; upd();
+    sel.onchange = upd; opening.oninput = upd; upd();
   }
 
   function createCustomer(prefill = {}, onCreated) {
@@ -90,7 +94,7 @@
         <div data-acct-box>${accountFields('a_')}</div>`,
       onSubmit: async (f) => {
         const d = formData(f);
-        const body = { ...d, must_change_pw: !!d.must_change_pw, accounts: d.with_account ? [{ type: d.a_type, nickname: d.a_nickname, opening: d.a_opening, rate: d.a_rate, credit_limit: d.a_credit_limit }] : [] };
+        const body = { ...d, must_change_pw: !!d.must_change_pw, accounts: d.with_account ? [{ type: d.a_type, nickname: d.a_nickname, opening: d.a_opening, credit_limit: d.a_credit_limit }] : [] };
         const r = await api('/api/admin/users', { body });
         toast(`Customer ${d.first_name} ${d.last_name} created`, 'success');
         if (onCreated) await onCreated(r.id);
@@ -105,7 +109,7 @@
 
   // ---------- website requests ----------
   const rqBadge = (s) => `<span class="badge ${s === 'new' ? 'warn' : s === 'closed' ? 'good' : 'info'}">${esc(s.replace('_', ' '))}</span>`;
-  const PRODUCT_LABEL = { checking: 'Advantage Checking', savings: 'Advantage Savings', money_market: 'Money Market', cd: 'CD', credit_card: 'Rewards Credit Card', mortgage: 'Mortgage / Refinance', auto_loan: 'Auto loan', personal_loan: 'Personal loan', investment: 'Bridge Invest / IRA' };
+  const PRODUCT_LABEL = { checking: 'Bridge Checking', savings: 'Bridge Savings', money_market: 'Money Market', cd: 'CD', credit_card: 'Rewards Credit Card', mortgage: 'Mortgage / Refinance', auto_loan: 'Auto loan', personal_loan: 'Personal loan', investment: 'Bridge Invest / IRA' };
   const PRODUCT_TO_TYPE = { checking: 'checking', savings: 'savings', money_market: 'money_market', cd: 'cd', credit_card: 'credit_card', mortgage: 'loan', auto_loan: 'loan', personal_loan: 'loan', investment: 'investment' };
   function summary(r) {
     const d = r.data;
@@ -174,7 +178,7 @@
           <div class="card"><div class="card-head"><h2>Latest transactions</h2><a href="#/transactions">View all</a></div>${txTable(transactions.slice(0, 10), { withCustomer: true, reversible: false })}</div>
           <div class="stack">
             <div class="card"><div class="card-head"><h3>Balances by product</h3></div>
-              ${s.byType.length ? `<div class="bars">${s.byType.map((t) => `<div class="bar-row" title="${t.n} accounts"><span>${esc(TYPE_LABEL[t.type] || t.type).replace('Advantage ', '')}</span>
+              ${s.byType.length ? `<div class="bars">${s.byType.map((t) => `<div class="bar-row" title="${t.n} accounts"><span>${esc(TYPE_LABEL[t.type] || t.type).replace('Bridge ', '')}</span>
                 <div class="bar-track"><div class="bar-fill" style="width:${Math.max(3, (Math.abs(t.total) / maxType) * 100)}%"></div></div><span class="num" style="text-align:right">${money(t.total)}</span></div>`).join('')}</div>` : '<div class="empty">No accounts yet.</div>'}
             </div>
             <div class="card"><div class="card-head"><h3>Customer messages</h3><a href="#/inbox">Inbox</a></div>

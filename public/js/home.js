@@ -24,8 +24,8 @@
   $('#quickLinks').innerHTML = quick.map(([i, l, s]) => `<a href="/p/${s}"><span class="ico">${icon(i, 22)}</span>${l}</a>`).join('');
 
   const products = [
-    { slug: 'checking', app: 'checking', tag: t('Checking', 'Cheques'), t: 'Advantage Checking', d: t('No monthly fee with $500 in direct deposits. Free debit card, instant transfers and overdraft protection.', 'Sin cargo mensual con $500 en depósitos directos. Tarjeta de débito gratis, transferencias inmediatas y protección contra sobregiros.'), r: '$0', rs: t('monthly fee', 'cargo mensual'), i: 'accounts', g: ['#0f3561', '#1f6fd1'] },
-    { slug: 'savings', app: 'savings', tag: t('Savings', 'Ahorros'), t: 'Advantage Savings', d: t('Grow your money with a competitive rate, no minimum balance and automatic transfers from checking.', 'Haga crecer su dinero con una tasa competitiva, sin saldo mínimo y con transferencias automáticas.'), r: '4.35%', rs: 'APY', i: 'savings', g: ['#0a5b46', '#16a07a'] },
+    { slug: 'checking', app: 'checking', tag: t('Checking', 'Cheques'), t: 'Bridge Checking', d: t('No monthly fee with $500 in direct deposits. Free debit card, instant transfers and overdraft protection.', 'Sin cargo mensual con $500 en depósitos directos. Tarjeta de débito gratis, transferencias inmediatas y protección contra sobregiros.'), r: '$0', rs: t('monthly fee', 'cargo mensual'), i: 'accounts', g: ['#0f3561', '#1f6fd1'] },
+    { slug: 'savings', app: 'savings', tag: t('Savings', 'Ahorros'), t: 'Bridge Savings', d: t('Build your savings with no minimum balance, no monthly fee and automatic transfers from checking.', 'Ahorre sin saldo mínimo, sin cargo mensual y con transferencias automáticas desde su cuenta de cheques.'), r: '$0', rs: t('minimum balance', 'saldo mínimo'), i: 'savings', g: ['#0a5b46', '#16a07a'] },
     { slug: 'credit-cards', app: 'credit_card', tag: t('Credit cards', 'Tarjetas de crédito'), t: 'Bridge Rewards Card', d: t('Earn 3% on dining & travel, 2% at grocery stores and 1% on everything else. No annual fee.', 'Gane 3% en restaurantes y viajes, 2% en supermercados y 1% en todo lo demás. Sin cuota anual.'), r: '$200', rs: t('online bonus', 'bono en línea'), i: 'card', g: ['#6b4a12', '#e0a83e'] },
     { slug: 'home-loans', app: 'mortgage', tag: t('Home loans', 'Hipotecas'), t: t('Mortgages & Refinance', 'Hipotecas y refinanciamiento'), d: t('Fixed and adjustable rates, down-payment assistance and a dedicated lending specialist.', 'Tasas fijas y ajustables, asistencia para el enganche y un especialista dedicado.'), r: '6.12%', rs: t('30-yr fixed APR', 'APR fija a 30 años'), i: 'house', g: ['#3a2366', '#7a52c7'] },
     { slug: 'auto-loans', app: 'auto_loan', tag: t('Auto loans', 'Préstamos de auto'), t: t('New & Used Auto', 'Autos nuevos y usados'), d: t('Fast decisions, flexible terms up to 84 months and rate discounts for existing customers.', 'Decisiones rápidas, plazos de hasta 84 meses y descuentos para clientes.'), r: '5.49%', rs: t('APR as low as', 'APR desde'), i: 'car', g: ['#7a1f2b', '#d0485a'] },
@@ -145,7 +145,7 @@
   loadNews('business');
 
   // ---------- savings calculator ----------
-  const APY = 0.0435;
+  const APY = 0.0001; // Bridge Savings standard rate, 0.01% APY
   function calc() {
     const dep = +$('#cDep').value, mon = +$('#cMon').value, yrs = +$('#cYrs').value;
     const r = Math.pow(1 + APY, 1 / 12) - 1;
