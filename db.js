@@ -147,6 +147,11 @@ CREATE INDEX IF NOT EXISTS idx_acct_user ON accounts(user_id);
 
 // Added after first release: customers whose history was generated in demo mode.
 try { db.exec('ALTER TABLE users ADD COLUMN sample_data INTEGER NOT NULL DEFAULT 0'); } catch { /* column exists */ }
+// Employment details (used for payroll descriptions in generated history).
+for (const col of ['job_title', 'employer']) {
+  try { db.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`); } catch { /* column exists */ }
+}
+try { db.exec('ALTER TABLE users ADD COLUMN annual_salary_cents INTEGER NOT NULL DEFAULT 0'); } catch { /* column exists */ }
 
 // ---------- helpers ----------
 function hashPassword(pw) {

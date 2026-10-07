@@ -61,14 +61,36 @@ const vary = (typical, spread = 0.35) => {
  * The first event is the opening entry; its amount is solved so the account ends at targetCents.
  * For credit accounts (card, loan) the "balance" is the amount owed: 'out' raises it, 'in' lowers it.
  */
-function planAccount(type, targetCents, fromMs, toMs, extra = 0) {
+// People customers send money to (and occasionally receive from), with everyday memos.
+const FIRST = ['James', 'Maria', 'David', 'Aisha', 'Michael', 'Sofia', 'Daniel', 'Grace', 'Kevin', 'Olivia', 'Marcus', 'Priya', 'Carlos', 'Emily', 'Andre', 'Hannah',
+  'Jamal', 'Chloe', 'Luis', 'Natalie', 'Tyler', 'Fatima', 'Ryan', 'Mei', 'Brandon', 'Zoe', 'Victor', 'Leah', 'Isaac', 'Jasmine'];
+const LAST = 'ABCDGHJKLMNOPRSTW';
+const MEMOS = ['dinner', 'rent share', 'birthday gift', 'groceries', 'concert tickets', 'utilities split', 'lunch', 'gas money', 'thanks!', 'game night',
+  'carpool', 'babysitting', 'haircut', 'loan payback', 'trip deposit', '', '', ''];
+const person = () => `${pick(FIRST)} ${LAST[crypto.randomInt(0, LAST.length)]}.`;
+
+function planAccount(type, targetCents, fromMs, toMs, extra = 0, opts = {}) {
   const credit = type === 'credit_card' || type === 'loan';
   const ev = [];
   const months = Math.max(1, Math.round((toMs - fromMs) / (30 * DAY)));
 
   if (type === 'checking') {
-    const employer = pick(EMPLOYERS);
-    let pay = rnd(1400, 3200);
+    const employer = opts.employer || pick(EMPLOYERS);
+    // Take-home pay per biweekly paycheck: ~75% of salary after taxes over 26 paydays.
+    let pay = opts.salaryCents > 0 ? (opts.salaryCents / 100) * 0.75 / 26 : rnd(1400, 3200);
+    // Money sent to people a few times a month, and now and then a friend pays them back.
+    const rangeDays = Math.round((toMs - fromMs) / DAY);
+    const sends = Math.max(1, Math.round(months * rnd(2, 5)));
+    for (let i = 0; i < sends; i++) {
+      const memo = pick(MEMOS);
+      ev.push({ time: randomTime(fromMs + crypto.randomInt(0, rangeDays + 1) * DAY), dir: 'out', cents: cents(vary(rnd(15, 250), 0.6)), category: 'transfer',
+        description: `Transfer to ${person()}${memo ? ` – ${memo}` : ''}` });
+    }
+    for (let i = 0; i < Math.round(sends * 0.25); i++) {
+      const memo = pick(MEMOS);
+      ev.push({ time: randomTime(fromMs + crypto.randomInt(0, rangeDays + 1) * DAY), dir: 'in', cents: cents(vary(rnd(15, 150), 0.6)), category: 'transfer',
+        description: `Transfer from ${person()}${memo ? ` – ${memo}` : ''}` });
+    }
     for (const t of eachDay(fromMs, toMs, 14, crypto.randomInt(1, 10))) {
       if (Math.random() < 0.04) pay *= rnd(1.02, 1.06); // occasional raise
       ev.push({ time: randomTime(t), dir: 'in', cents: cents(pay * rnd(0.93, 1.09)), category: 'payroll', description: `Direct deposit – ${employer} payroll` });
@@ -270,7 +292,8 @@ const MIN_TRANSACTIONS = 40;
 // Which account absorbs top-up activity when a customer would have fewer than MIN_TRANSACTIONS.
 const TOP_UP_ORDER = ['checking', 'credit_card', 'savings', 'money_market', 'investment', 'loan', 'cd'];
 
-function generateHistory(db, { userId, fromMs, toMs, holdings, newAccountNumber, randomDigits, newReference, actorId }) {
+function generateHistory(db, { userId, fromMs, toMs, holdings, employer = '', salaryCents = 0, newAccountNumber, randomDigits, newReference, actorId }) {
+  const opts = { employer, salaryCents };
   // The main account (checking if there is one) opens on the From date; the others open on their
   // own later dates within the first part of the range, so accounts aren't all opened at once.
   const types = Object.keys(holdings).sort((a, b) => TOP_UP_ORDER.indexOf(a) - TOP_UP_ORDER.indexOf(b));
@@ -293,7 +316,7 @@ function generateHistory(db, { userId, fromMs, toMs, holdings, newAccountNumber,
     const targetCents = Math.round(Number(holdings[type]) * 100);
     if (!Number.isFinite(targetCents) || targetCents < 0) continue;
     const { dayMs, timeMs: openMs } = openOf[type];
-    const plan = planAccount(type, targetCents, dayMs, toMs);
+    const plan = planAccount(type, targetCents, dayMs, toMs, 0, opts);
     plans.push({ type, targetCents, dayMs, openMs, plan, rows: settle(type, targetCents, dayMs, toMs, plan, openMs) });
   }
   const primary = plans[0];
@@ -302,7 +325,7 @@ function generateHistory(db, { userId, fromMs, toMs, holdings, newAccountNumber,
     if (total >= MIN_TRANSACTIONS) break;
     const extra = (primary.extra || 0) + (MIN_TRANSACTIONS - total) + crypto.randomInt(2, 9);
     primary.extra = extra;
-    primary.plan = planAccount(primary.type, primary.targetCents, primary.dayMs, toMs, extra);
+    primary.plan = planAccount(primary.type, primary.targetCents, primary.dayMs, toMs, extra, opts);
     primary.rows = settle(primary.type, primary.targetCents, primary.dayMs, toMs, primary.plan, primary.openMs);
   }
 
@@ -348,7 +371,7 @@ const QUESTIONS = [
     'Done — your statements will arrive by mail starting next cycle, and they’ll also stay available in Online Banking.', null],
 ];
 
-function generateMessages(db, { userId, firstName, fromMs, toMs, accounts }) {
+function generateMessages(db, { userId, firstName, fromMs, toMs, accounts, employer = '' }) {
   const msgs = [];
   const add = (time, subject, body, fromAdmin = 1) => { if (time >= fromMs && time <= toMs + DAY - 1) msgs.push({ time, subject, body, fromAdmin }); };
   const types = new Set(accounts.map((a) => a.type));
@@ -374,7 +397,7 @@ function generateMessages(db, { userId, firstName, fromMs, toMs, accounts }) {
   add(randomTime(fromMs + crypto.randomInt(4, 9) * DAY), 'You’re enrolled in paperless statements',
     'Your statements will now be delivered securely in Online Banking. We’ll send you a message each time a new statement is ready.');
   if (types.has('checking')) add(randomTime(fromMs + crypto.randomInt(12, 25) * DAY), 'Direct deposit received',
-    'Your first direct deposit has arrived in Bridge Checking. Thanks for banking with us!');
+    `Your first direct deposit${employer ? ` from ${employer}` : ''} has arrived in Bridge Checking. Thanks for banking with us!`);
 
   // Statement notices: monthly for the last two years, quarterly before that.
   const recent = toMs - 730 * DAY;

@@ -40,8 +40,9 @@ const publicUser = (u) => u && ({
   id: u.id, role: u.role, username: u.username, first_name: u.first_name, last_name: u.last_name,
   email: u.email, phone: u.phone, dob: u.dob, address: u.address, city: u.city, state: u.state, zip: u.zip,
   ssn_last4: u.ssn_last4, status: u.status, must_change_pw: !!u.must_change_pw, created_at: u.created_at, last_login: u.last_login,
-  sample_data: !!u.sample_data,
+  sample_data: !!u.sample_data, job_title: u.job_title || '', employer: u.employer || '', annual_salary: (u.annual_salary_cents || 0) / 100,
 });
+const salaryCents = (v) => Math.max(0, Math.min(Math.round((Number(v) || 0) * 100), 100_000_000_00));
 const acctView = (a) => ({
   id: a.id, user_id: a.user_id, type: a.type, nickname: a.nickname, number: a.number,
   masked: '••••' + a.number.slice(-4), balance: a.balance_cents / 100, credit_limit: a.credit_limit_cents / 100,
@@ -480,9 +481,11 @@ admin.post('/users', wrap((req, res) => {
       .run(username, hashPassword(password), first, last, str(b.email, 120), str(b.phone, 30), str(b.dob, 10),
         str(b.address), str(b.city, 80), str(b.state, 40), str(b.zip, 12), ssn, 0);
     const userId = Number(r.lastInsertRowid);
+    const job = { job_title: str(b.job_title, 80), employer: str(b.employer, 80), salary: salaryCents(b.annual_salary) };
+    db.prepare('UPDATE users SET job_title = ?, employer = ?, annual_salary_cents = ? WHERE id = ?').run(job.job_title, job.employer, job.salary, userId);
     if (sample) {
-      generated = generateHistory(db, { userId, ...sample, newAccountNumber, randomDigits, newReference, actorId: req.user.id });
-      generateMessages(db, { userId, firstName: first, fromMs: sample.fromMs, toMs: sample.toMs, accounts: generated });
+      generated = generateHistory(db, { userId, ...sample, employer: job.employer, salaryCents: job.salary, newAccountNumber, randomDigits, newReference, actorId: req.user.id });
+      generateMessages(db, { userId, firstName: first, fromMs: sample.fromMs, toMs: sample.toMs, accounts: generated, employer: job.employer });
       db.prepare('UPDATE users SET sample_data = 1, created_at = ? WHERE id = ?').run(new Date(sample.fromMs).toISOString().slice(0, 19).replace('T', ' '), userId);
     } else {
       for (const a of accounts) openAccount(userId, a, req.user.id);
@@ -621,9 +624,11 @@ admin.get('/users/:id/transactions', wrap((req, res) => {
 admin.put('/users/:id', wrap((req, res) => {
   const u = getUser(req.params.id);
   const b = { ...u, ...req.body };
-  db.prepare(`UPDATE users SET first_name=?, last_name=?, email=?, phone=?, dob=?, address=?, city=?, state=?, zip=?, ssn_last4=? WHERE id=?`)
+  db.prepare(`UPDATE users SET first_name=?, last_name=?, email=?, phone=?, dob=?, address=?, city=?, state=?, zip=?, ssn_last4=?,
+                job_title=?, employer=?, annual_salary_cents=? WHERE id=?`)
     .run(str(b.first_name, 60), str(b.last_name, 60), str(b.email, 120), str(b.phone, 30), str(b.dob, 10), str(b.address),
-      str(b.city, 80), str(b.state, 40), str(b.zip, 12), str(b.ssn_last4, 4).replace(/\D/g, ''), u.id);
+      str(b.city, 80), str(b.state, 40), str(b.zip, 12), str(b.ssn_last4, 4).replace(/\D/g, ''),
+      str(b.job_title, 80), str(b.employer, 80), req.body.annual_salary !== undefined ? salaryCents(req.body.annual_salary) : u.annual_salary_cents, u.id);
   audit(req.user.id, 'update_customer', u.username);
   res.json({ ok: true });
 }));

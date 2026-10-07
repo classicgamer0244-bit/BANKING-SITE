@@ -100,6 +100,11 @@
         <div class="field"><label>Street address</label><input name="address"></div>
         <div class="grid-3"><div class="field"><label>City</label><input name="city"></div><div class="field"><label>State</label><input name="state"></div><div class="field"><label>ZIP</label><input name="zip"></div></div>
         <div class="grid-3"><div class="field"><label>SSN (last 4 only)</label><input name="ssn_last4" maxlength="4" inputmode="numeric"></div></div>
+        <h4 style="margin:10px 0 12px">Employment</h4>
+        <div class="grid-3"><div class="field"><label>Job title</label><input name="job_title" maxlength="80" placeholder="e.g. Registered Nurse"></div>
+          <div class="field"><label>Employer</label><input name="employer" maxlength="80" placeholder="e.g. Summit Health Partners"></div>
+          <div class="field"><label>Annual salary ($)</label><input name="annual_salary" type="number" min="0" step="1000" placeholder="optional"></div></div>
+        ${config.demo ? '<p class="small muted" style="margin:-6px 0 12px">Generated paychecks come from this employer and are sized from the salary (about 75% after taxes, every two weeks).</p>' : ''}
         <h4 style="margin:10px 0 12px">Online banking login</h4>
         <div class="grid-2"><div class="field"><label>User ID *</label><input name="username" required minlength="4" autocomplete="off"></div>
           <div class="field"><label>Password *</label><div style="display:flex;gap:6px"><input name="password" required minlength="8" autocomplete="new-password" value="${genPassword()}"><button type="button" class="btn btn-ghost btn-sm" data-gen>New</button></div></div></div>
@@ -279,7 +284,8 @@
             </div>
           </div>
           <div class="detail-grid">
-            ${[['Email', u.email], ['Phone', u.phone], ['Date of birth', u.dob], ['Address', [u.address, u.city, u.state, u.zip].filter(Boolean).join(', ')], ['SSN', u.ssn_last4 ? '•••-••-' + u.ssn_last4 : ''], ['Customer since', date(u.created_at)]]
+            ${[['Email', u.email], ['Phone', u.phone], ['Date of birth', u.dob], ['Address', [u.address, u.city, u.state, u.zip].filter(Boolean).join(', ')], ['SSN', u.ssn_last4 ? '•••-••-' + u.ssn_last4 : ''], ['Customer since', date(u.created_at)],
+              ['Job', [u.job_title, u.employer].filter(Boolean).join(' at ')], ['Annual salary', u.annual_salary ? money(u.annual_salary) : '']]
               .map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${esc(v || '—')}</div></div>`).join('')}
           </div>
         </div>
@@ -316,7 +322,10 @@
           <div class="grid-3"><div class="field"><label>Email</label><input name="email" value="${esc(u.email)}"></div><div class="field"><label>Phone</label><input name="phone" value="${esc(u.phone)}"></div><div class="field"><label>Date of birth</label><input type="date" name="dob" value="${esc(u.dob)}"></div></div>
           <div class="field"><label>Street address</label><input name="address" value="${esc(u.address)}"></div>
           <div class="grid-3"><div class="field"><label>City</label><input name="city" value="${esc(u.city)}"></div><div class="field"><label>State</label><input name="state" value="${esc(u.state)}"></div><div class="field"><label>ZIP</label><input name="zip" value="${esc(u.zip)}"></div></div>
-          <div class="grid-3"><div class="field"><label>SSN last 4</label><input name="ssn_last4" maxlength="4" value="${esc(u.ssn_last4)}"></div></div>`,
+          <div class="grid-3"><div class="field"><label>SSN last 4</label><input name="ssn_last4" maxlength="4" value="${esc(u.ssn_last4)}"></div></div>
+          <div class="grid-3"><div class="field"><label>Job title</label><input name="job_title" maxlength="80" value="${esc(u.job_title)}"></div>
+            <div class="field"><label>Employer</label><input name="employer" maxlength="80" value="${esc(u.employer)}"></div>
+            <div class="field"><label>Annual salary ($)</label><input name="annual_salary" type="number" min="0" step="1000" value="${u.annual_salary || ''}"></div></div>`,
         onSubmit: async (f) => { await api('/api/admin/users/' + id, { method: 'PUT', body: formData(f) }); toast('Profile saved', 'success'); reload(); },
       }));
       act('reset', () => {
