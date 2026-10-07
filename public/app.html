@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
+<script>(function(){try{var t=localStorage.getItem('cb_theme')||'light';if(t==='dark')document.documentElement.dataset.theme='dark';}catch(e){}})();</script>
 </head>
 <body>
 <div class="shell">
@@ -28,6 +29,7 @@
       </div>
       <div class="mini-ticker" id="miniTicker"></div>
       <div class="right">
+        <button type="button" class="theme-btn" id="themeBtn" aria-label="Toggle theme" title="Toggle theme"></button>
         <button type="button" class="notif-btn" id="notifBtn" aria-label="Notifications" title="Notifications">
           <span class="notif-icon-wrap" id="notifIconWrap"></span>
           <span class="notif-badge" id="notifBadge" hidden>0</span>

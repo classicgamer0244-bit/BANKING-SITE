@@ -130,7 +130,7 @@
             ${notifications.length ? notifications.map((n) => `
               <div style="padding:12px 14px;border-bottom:1px solid var(--line-2);border-radius:8px;margin-bottom:6px;background:${n.is_read ? 'transparent' : 'rgba(224, 168, 62, .06)'}">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-                  <b style="font-size:14.5px;color:var(--navy-900)">${esc(n.title)}</b>
+                  <b style="font-size:14.5px;color:var(--ink)">${esc(n.title)}</b>
                   <span class="small muted" style="white-space:nowrap">${dateTime(n.created_at)}</span>
                 </div>
                 <div style="font-size:13.5px;color:var(--ink-2);margin-top:4px;line-height:1.45">${esc(n.message)}</div>
@@ -787,6 +787,9 @@
         if (cur >= start && cur > 0) window.scrollTo(0, 0);
       }, 250);
     };
+    // Wire Theme Toggle
+    CB.initThemeToggle('#themeBtn');
+
     // Wire Notifications Bell
     const notifWrap = $('#notifIconWrap');
     if (notifWrap) notifWrap.innerHTML = icon('bell', 20);

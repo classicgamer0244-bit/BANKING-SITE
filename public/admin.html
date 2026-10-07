@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
+<script>(function(){try{var t=localStorage.getItem('cb_theme')||'light';if(t==='dark')document.documentElement.dataset.theme='dark';}catch(e){}})();</script>
 </head>
 <body>
 <div class="shell">
@@ -27,7 +28,10 @@
         <button class="hamburger" id="hamb" aria-label="Menu"></button>
         <h1 id="pageTitle">Dashboard</h1>
       </div>
-      <div class="right"><button class="btn btn-sm btn-gold" id="quickCreate">+ New customer</button></div>
+      <div class="right" style="display:flex;align-items:center;gap:12px">
+        <button type="button" class="theme-btn" id="themeBtn" aria-label="Toggle theme" title="Toggle theme"></button>
+        <button class="btn btn-sm btn-gold" id="quickCreate">+ New customer</button>
+      </div>
     </header>
     <main class="page" id="page"></main>
   </div>

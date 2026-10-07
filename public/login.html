@@ -8,8 +8,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
+<script>(function(){try{var t=localStorage.getItem('cb_theme')||'light';if(t==='dark')document.documentElement.dataset.theme='dark';}catch(e){}})();</script>
 </head>
 <body>
+<div style="position:fixed;top:18px;right:18px;z-index:100">
+  <button type="button" class="theme-btn" id="themeBtn" aria-label="Toggle theme" title="Toggle theme"></button>
+</div>
 <div class="login-page">
   <div class="login-art">
     <span id="logoA" style="position:relative;z-index:1"></span>
@@ -35,6 +39,7 @@
 </div>
 <script src="/js/common.js"></script>
 <script>
+  CB.initThemeToggle('#themeBtn');
   document.getElementById('logoA').innerHTML = CB.logo('/');
   const f = document.getElementById('loginForm');
   CB.api('/api/me', { allow401: true }).then((r) => { location.href = r.user.role === 'admin' ? '/admin' : '/app'; }).catch(() => {});

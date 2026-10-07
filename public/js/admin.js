@@ -844,6 +844,7 @@
     try { me = (await api('/api/me')).user; } catch { return; }
     if (me.role !== 'admin') { location.href = '/app'; return; }
     $('#sideLogo').innerHTML = CB.logo('#/dashboard');
+    CB.initThemeToggle('#themeBtn');
     $('#who').textContent = me.username;
     $('#hamb').innerHTML = icon('menu', 24);
     $('#hamb').onclick = () => $('#sidebar').classList.toggle('open');

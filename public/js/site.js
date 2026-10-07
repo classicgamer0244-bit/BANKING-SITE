@@ -31,6 +31,7 @@ const SITE = (() => {
         <a href="/p/locations" class="mobile-only">${t('Locations', 'Sucursales')}</a><a href="/p/contact" class="mobile-only">${t('Contact us', 'Contáctenos')}</a>
         <button type="button" class="link-btn mobile-only" data-lang style="text-align:left;padding:8px 10px;font-weight:600">${lang === 'es' ? 'English' : 'En español'}</button></nav>
       <div class="header-actions">
+        <button type="button" class="theme-btn" id="siteThemeBtn" aria-label="Toggle theme" title="Toggle theme"></button>
         <a class="btn btn-ghost btn-sm" href="/p/open-account">${t('Open an account', 'Abrir una cuenta')}</a>
         <a class="btn btn-sm" href="/login">${t('Log in', 'Iniciar sesión')}</a>
         <button class="menu-btn" id="menuBtn" aria-label="Menu" aria-expanded="false">${icon('menu', 24)}</button>
@@ -135,7 +136,10 @@ const SITE = (() => {
   function init() {
     document.documentElement.lang = lang;
     const h = document.getElementById('siteHeader'), f = document.getElementById('siteFooter');
-    if (h) h.innerHTML = header();
+    if (h) {
+      h.innerHTML = header();
+      CB.initThemeToggle('#siteThemeBtn');
+    }
     if (f) f.innerHTML = footer();
     if (lang === 'es') document.querySelectorAll('[data-es]').forEach((el) => { el.innerHTML = el.dataset.es; });
     if (lang === 'es') document.querySelectorAll('[data-es-placeholder]').forEach((el) => { el.placeholder = el.dataset.esPlaceholder; });

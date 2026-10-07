@@ -54,6 +54,8 @@ const CB = (() => {
     lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
     bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+    sun: '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>',
+    moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
     check: '<path d="M5 12l5 5L20 7"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     download: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',
@@ -187,5 +189,40 @@ const CB = (() => {
     location.href = '/';
   }
 
-  return { api, money, num, pct, esc, date, dateTime, ago, icon, typeIcon, logo, toast, modal, formData, sparkline, fmtPrice, acctName, TYPE_LABEL, logout, autoPager };
+  function getTheme() {
+    try { return localStorage.getItem('cb_theme') || 'light'; } catch { return 'light'; }
+  }
+
+  function setTheme(t) {
+    const val = t === 'dark' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = val;
+    try { localStorage.setItem('cb_theme', val); } catch {}
+  }
+
+  function initThemeToggle(btnSelector = '#themeBtn') {
+    const current = getTheme();
+    setTheme(current);
+    const btn = typeof btnSelector === 'string' ? document.querySelector(btnSelector) : btnSelector;
+    if (!btn) return;
+    const updateBtn = (t) => {
+      btn.innerHTML = icon(t === 'dark' ? 'sun' : 'moon', 18);
+      const label = t === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+      btn.setAttribute('aria-label', label);
+      btn.title = label;
+    };
+    updateBtn(current);
+    btn.onclick = () => {
+      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      setTheme(next);
+      updateBtn(next);
+    };
+  }
+
+  try {
+    const _t = localStorage.getItem('cb_theme');
+    if (_t === 'dark') document.documentElement.dataset.theme = 'dark';
+  } catch {}
+
+  return { api, money, num, pct, esc, date, dateTime, ago, icon, typeIcon, logo, toast, modal, formData, sparkline, fmtPrice, acctName, TYPE_LABEL, logout, autoPager, getTheme, setTheme, initThemeToggle };
 })();
+
